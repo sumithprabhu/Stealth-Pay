@@ -1,0 +1,33 @@
+{
+  "name": "@stealthpay/contracts",
+  "version": "1.0.0",
+  "description": "StealthPay privacy pool smart contracts",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:coverage": "hardhat coverage",
+    "deploy:local": "hardhat ignition deploy ./ignition/modules/StealthPay.ts --network localhost",
+    "deploy:0g-testnet": "hardhat ignition deploy ./ignition/modules/StealthPay.ts --network zeroGTestnet",
+    "deploy:0g-mainnet": "hardhat ignition deploy ./ignition/modules/StealthPay.ts --network zeroGMainnet",
+    "node": "hardhat node",
+    "clean": "hardhat clean",
+    "typecheck": "tsc --noEmit",
+    "lint": "solhint 'contracts/**/*.sol'",
+    "size": "hardhat size-contracts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-ignition-ethers": "^0.15.0",
+    "@openzeppelin/hardhat-upgrades": "^3.0.0",
+    "hardhat": "^2.22.0",
+    "hardhat-contract-sizer": "^2.10.0",
+    "solhint": "^5.0.0",
+    "dotenv": "^16.4.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "@openzeppelin/contracts-upgradeable": "^5.0.0"
+  }
+}
