@@ -1,0 +1,15 @@
+# Dependencies (any package in the repo)
+node_modules/
+
+# Environment and secrets — keep examples tracked
+.env
+.env.*
+!.env.example
+
+# Next.js
+.next/
+out/
+
+# Logs and OS noise
+*.log
+.DS_Store
