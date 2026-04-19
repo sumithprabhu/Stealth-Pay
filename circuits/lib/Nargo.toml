@@ -1,0 +1,7 @@
+[package]
+name = "stealthpay_lib"
+type = "lib"
+authors = ["StealthPay"]
+compiler_version = ">=1.0.0"
+
+[dependencies]
