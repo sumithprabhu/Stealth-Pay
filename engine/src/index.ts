@@ -95,7 +95,10 @@ async function main() {
 
   // ── Start HTTP server ───────────────────────────────────────────────────
 
-  const app = await buildServer(config, { noteManager, crypto, signer, chainClient });
+  const teeMode = process.env["TEE_MODE"] ?? "dev";
+  logger.info({ teeMode }, "TEE mode");
+
+  const app = await buildServer(config, { noteManager, crypto, signer, chainClient, teeMode });
 
   await app.listen({ port: config.server.port, host: config.server.host });
   logger.info({ port: config.server.port, host: config.server.host }, "Engine listening");

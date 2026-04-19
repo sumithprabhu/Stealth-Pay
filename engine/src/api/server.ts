@@ -10,6 +10,7 @@ import { healthRoutes } from "./routes/health";
 import { shieldRoutes } from "./routes/shield";
 import { unshieldRoutes } from "./routes/unshield";
 import { privateActionRoutes } from "./routes/privateAction";
+import { attestationRoutes } from "./routes/attestation";
 import { NoteManager } from "../core/NoteManager";
 import { AttestationSigner } from "../core/AttestationSigner";
 import { CryptoEngine } from "../core/CryptoEngine";
@@ -24,15 +25,14 @@ export async function buildServer(
     crypto:       CryptoEngine;
     signer:       AttestationSigner;
     chainClient:  PrivacyPoolClient;
+    teeMode:      string;
   }
 ) {
+  const isDev  = process.env["NODE_ENV"] !== "production";
   const app = Fastify({
-    logger: {
-      level: config.server.logLevel,
-      transport: process.env["NODE_ENV"] !== "production"
-        ? { target: "pino-pretty" }
-        : undefined,
-    },
+    logger: isDev
+      ? { level: config.server.logLevel, transport: { target: "pino-pretty" } }
+      : { level: config.server.logLevel },
   });
 
   // ── Security plugins ────────────────────────────────────────────────────
@@ -54,9 +54,15 @@ export async function buildServer(
   });
 
   // ── Auth ────────────────────────────────────────────────────────────────
+  // /attestation is public (signing key is not secret); all other routes require API key
 
   const authenticate = createAuthMiddleware(config.server.apiKey);
-  app.addHook("onRequest", authenticate);
+  app.addHook("onRequest", async (req, reply) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((req.routeOptions?.config as any)?.skipAuth) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return authenticate(req as any, reply);
+  });
 
   // ── Routes ──────────────────────────────────────────────────────────────
 
@@ -70,6 +76,7 @@ export async function buildServer(
   };
 
   await app.register(healthRoutes, routeOpts);
+  await app.register(attestationRoutes, { signer: deps.signer, teeMode: deps.teeMode });
   await app.register(shieldRoutes, routeOpts);
   await app.register(unshieldRoutes, routeOpts);
   await app.register(privateActionRoutes, routeOpts);

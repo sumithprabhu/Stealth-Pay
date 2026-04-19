@@ -61,18 +61,15 @@ export class PrivacyPoolClient {
    */
   async getDomainSeparator(): Promise<string> {
     try {
-      return await this.verifier.domainSeparator() as string;
+      return await (this.verifier["domainSeparator"] as () => Promise<string>)();
     } catch (err) {
       throw new EngineError(EngineErrorCode.CHAIN_ERROR, "Failed to fetch domain separator", err);
     }
   }
 
-  /**
-   * Check if this engine's enclave key is registered and active on-chain.
-   */
   async isEnclaveActive(enclaveAddress: string): Promise<boolean> {
     try {
-      return await this.verifier.isActiveEnclave(enclaveAddress) as boolean;
+      return await (this.verifier["isActiveEnclave"] as (a: string) => Promise<boolean>)(enclaveAddress);
     } catch (err) {
       throw new EngineError(EngineErrorCode.CHAIN_ERROR, "Failed to check enclave status", err);
     }
@@ -83,27 +80,27 @@ export class PrivacyPoolClient {
   // ─────────────────────────────────────────────────────────────────────────
 
   async getRoot(): Promise<string> {
-    return await this.pool.getRoot() as string;
+    return (this.pool["getRoot"] as () => Promise<string>)();
   }
 
   async getTreeSize(): Promise<bigint> {
-    return await this.pool.getTreeSize() as bigint;
+    return (this.pool["getTreeSize"] as () => Promise<bigint>)();
   }
 
   async isNullifierSpent(nullifier: string): Promise<boolean> {
-    return await this.pool.isNullifierSpent(nullifier) as boolean;
+    return (this.pool["isNullifierSpent"] as (n: string) => Promise<boolean>)(nullifier);
   }
 
   async isCommitmentKnown(commitment: string): Promise<boolean> {
-    return await this.pool.isCommitmentKnown(commitment) as boolean;
+    return (this.pool["isCommitmentKnown"] as (c: string) => Promise<boolean>)(commitment);
   }
 
   async isTokenWhitelisted(token: string): Promise<boolean> {
-    return await this.pool.isTokenWhitelisted(token) as boolean;
+    return (this.pool["isTokenWhitelisted"] as (t: string) => Promise<boolean>)(token);
   }
 
   async getProtocolFeeBps(): Promise<bigint> {
-    return await this.pool.protocolFeeBps() as bigint;
+    return (this.pool["protocolFeeBps"] as () => Promise<bigint>)();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -126,7 +123,9 @@ export class PrivacyPoolClient {
     logger.info({ commitment }, "Waiting for on-chain Shielded event");
 
     while (Date.now() < deadline) {
-      const filter = this.pool.filters["Shielded"](null, null, null, null, commitment);
+      const shieldedFilter = (this.pool.filters as Record<string, ((...args: unknown[]) => ethers.DeferredTopicFilter) | undefined>)["Shielded"];
+      if (!shieldedFilter) throw new EngineError(EngineErrorCode.CHAIN_ERROR, "Shielded event filter not found");
+      const filter = shieldedFilter(null, null, null, null, commitment);
       const events = await this.pool.queryFilter(filter, -100);
 
       if (events.length > 0) {
