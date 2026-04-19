@@ -10,6 +10,14 @@ node_modules/
 .next/
 out/
 
+# Noir / Nargo (workspace build output)
+circuits/target/
+
+# IDE / local editor
+.idea/
+*.swp
+*.swo
+
 # Logs and OS noise
 *.log
 .DS_Store
