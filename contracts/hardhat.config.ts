@@ -10,15 +10,23 @@ const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY ?? "0xac0974bec39a
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.24",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
+    compilers: [
+      {
+        version: "0.8.27",
+        settings: {
+          optimizer: { enabled: true, runs: 1 },
+          evmVersion: "cancun",
+        },
       },
-      viaIR: true,
-      evmVersion: "cancun",
-    },
+      {
+        version: "0.8.24",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          viaIR: true,
+          evmVersion: "cancun",
+        },
+      },
+    ],
   },
   networks: {
     hardhat: {
