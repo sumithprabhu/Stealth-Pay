@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: stealthpay-engine
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    # TDX device passthrough — only active on real 0G Compute TDX nodes.
+    # On dev/testnet machines this device won't exist; Docker ignores missing devices.
+    devices:
+      - /dev/tdx_guest:/dev/tdx_guest
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
