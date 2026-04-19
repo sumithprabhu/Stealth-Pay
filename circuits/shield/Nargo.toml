@@ -1,0 +1,8 @@
+[package]
+name = "shield"
+type = "bin"
+authors = ["StealthPay"]
+compiler_version = ">=1.0.0"
+
+[dependencies]
+stealthpay_lib = { path = "../lib" }
