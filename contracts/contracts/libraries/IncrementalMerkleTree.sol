@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {LibPoseidon2} from "./poseidon2/LibPoseidon2.sol";
+import {Field} from "./poseidon2/Field.sol";
+
 /// @title IncrementalMerkleTree
-/// @notice Append-only binary Merkle tree with keccak256 hashing.
-///         Stores only the "filled subtree" nodes needed to compute the
-///         insertion path — O(depth) storage instead of O(2^depth).
+/// @notice Append-only binary Merkle tree using Poseidon2 hashing.
+///         Hash function matches the Noir circuit's compute_root() exactly:
+///           hash_node(l, r) = Poseidon2::hash([l, r], 2) = poseidon2_permutation([l, r, 0, iv])[0]
+///         Stores only the "filled subtree" nodes — O(depth) storage.
 /// @dev    Depth 20 supports up to 2^20 (~1 million) commitments.
 library IncrementalMerkleTree {
+    using LibPoseidon2 for *;
+    using Field for *;
+
     uint256 internal constant MAX_DEPTH = 32;
 
     error IMT__DepthOutOfRange();
@@ -16,10 +23,7 @@ library IncrementalMerkleTree {
         uint256 depth;
         uint256 nextIndex;
         bytes32 root;
-        /// @dev filledSubtrees[i] = root of the subtree of height i
-        ///      that is completely filled on the left side
         bytes32[MAX_DEPTH] filledSubtrees;
-        /// @dev zeros[i] = keccak hash of a zero-valued subtree at height i
         bytes32[MAX_DEPTH] zeros;
     }
 
@@ -28,12 +32,12 @@ library IncrementalMerkleTree {
         if (depth == 0 || depth > MAX_DEPTH) revert IMT__DepthOutOfRange();
         self.depth = depth;
 
-        // Pre-compute zero subtree hashes bottom-up
+        LibPoseidon2.Constants memory constants = LibPoseidon2.load();
         bytes32 currentZero = bytes32(0);
         for (uint256 i = 0; i < depth; ) {
             self.zeros[i] = currentZero;
             self.filledSubtrees[i] = currentZero;
-            currentZero = _hash(currentZero, currentZero);
+            currentZero = _hash(constants, currentZero, currentZero);
             unchecked { ++i; }
         }
         self.root = currentZero;
@@ -46,17 +50,15 @@ library IncrementalMerkleTree {
 
         if (currentIndex >= (1 << depth)) revert IMT__TreeFull();
 
+        LibPoseidon2.Constants memory constants = LibPoseidon2.load();
         bytes32 currentLevelHash = leaf;
-        uint256 i;
 
-        for (i = 0; i < depth; ) {
+        for (uint256 i = 0; i < depth; ) {
             if (currentIndex & 1 == 0) {
-                // Left child: store it, pair with zero on the right
                 self.filledSubtrees[i] = currentLevelHash;
-                currentLevelHash = _hash(currentLevelHash, self.zeros[i]);
+                currentLevelHash = _hash(constants, currentLevelHash, self.zeros[i]);
             } else {
-                // Right child: pair with stored left sibling
-                currentLevelHash = _hash(self.filledSubtrees[i], currentLevelHash);
+                currentLevelHash = _hash(constants, self.filledSubtrees[i], currentLevelHash);
             }
             currentIndex >>= 1;
             unchecked { ++i; }
@@ -67,26 +69,17 @@ library IncrementalMerkleTree {
         return currentLevelHash;
     }
 
-    /// @notice Returns the current Merkle root
-    function getRoot(Tree storage self) internal view returns (bytes32) {
-        return self.root;
-    }
+    function getRoot(Tree storage self) internal view returns (bytes32) { return self.root; }
+    function size(Tree storage self) internal view returns (uint256) { return self.nextIndex; }
+    function capacity(Tree storage self) internal view returns (uint256) { return 1 << self.depth; }
 
-    /// @notice Returns the number of leaves inserted so far
-    function size(Tree storage self) internal view returns (uint256) {
-        return self.nextIndex;
-    }
-
-    /// @notice Returns the maximum number of leaves this tree can hold
-    function capacity(Tree storage self) internal view returns (uint256) {
-        return 1 << self.depth;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Internal
-    // ─────────────────────────────────────────────────────────────────────────
-
-    function _hash(bytes32 left, bytes32 right) private pure returns (bytes32) {
-        return keccak256(abi.encodePacked(left, right));
+    // Poseidon2([left, right], 2) — matches hash_node() in merkle.nr exactly
+    function _hash(LibPoseidon2.Constants memory constants, bytes32 left, bytes32 right)
+        private
+        pure
+        returns (bytes32)
+    {
+        Field.Type result = LibPoseidon2.hash_2(constants, Field.Type.wrap(uint256(left)), Field.Type.wrap(uint256(right)));
+        return bytes32(Field.Type.unwrap(result));
     }
 }
