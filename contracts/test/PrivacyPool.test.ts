@@ -1,178 +1,106 @@
 import { expect } from "chai";
 import { ethers, upgrades } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { AttestationVerifier, PrivacyPool } from "../typechain-types";
+import { MockHonkVerifier, PrivacyPool } from "../typechain-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function deployMockERC20(deployer: SignerWithAddress, supply: bigint) {
-  const Factory = await ethers.getContractFactory("MockERC20", deployer);
-  return Factory.deploy("Mock USDC", "mUSDC", supply);
+  const F = await ethers.getContractFactory("MockERC20", deployer);
+  return F.deploy("Mock USDC", "mUSDC", supply);
 }
 
-async function buildAV(admin: SignerWithAddress): Promise<AttestationVerifier> {
-  const Factory = await ethers.getContractFactory("AttestationVerifier");
-  return upgrades.deployProxy(Factory, [admin.address], {
-    kind: "uups",
-  }) as unknown as Promise<AttestationVerifier>;
+async function deployMockVerifier(): Promise<MockHonkVerifier> {
+  const F = await ethers.getContractFactory("MockHonkVerifier");
+  return F.deploy() as unknown as Promise<MockHonkVerifier>;
 }
 
-function makeCommitment(seed: string): string {
-  return ethers.keccak256(ethers.toUtf8Bytes(seed));
+function rndBytes32(): string {
+  return ethers.hexlify(ethers.randomBytes(32));
 }
 
-function makeNullifier(seed: string): string {
-  return ethers.keccak256(ethers.toUtf8Bytes("nullifier:" + seed));
-}
-
-// Sign the raw EIP-712 digest without any extra prefix.
-// digest = keccak256("\x19\x01" || domainSep || structHash)
-function signRawEIP712(wallet: ethers.Wallet, domainSeparator: string, structHash: string): string {
-  const digest = ethers.solidityPackedKeccak256(
-    ["bytes2", "bytes32", "bytes32"],
-    ["0x1901", domainSeparator, structHash]
-  );
-  const sig = wallet.signingKey.sign(ethers.getBytes(digest));
-  return ethers.Signature.from(sig).serialized;
-}
+const MOCK_PROOF = ethers.hexlify(ethers.randomBytes(100));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tests
+// Suite
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("PrivacyPool", () => {
-  let pool: PrivacyPool;
-  let av: AttestationVerifier;
-  let usdc: Awaited<ReturnType<typeof deployMockERC20>>;
+describe("PrivacyPool (V2 — ZK proof flow)", () => {
+  let pool:      PrivacyPool;
+  let shieldV:   MockHonkVerifier;
+  let spendV:    MockHonkVerifier;
+  let usdc:      Awaited<ReturnType<typeof deployMockERC20>>;
 
-  let admin: SignerWithAddress;
-  let user: SignerWithAddress;
-  let recipient: SignerWithAddress;
+  let admin:        SignerWithAddress;
+  let user:         SignerWithAddress;
+  let recipient:    SignerWithAddress;
   let feeRecipient: SignerWithAddress;
-  let stranger: SignerWithAddress;
+  let stranger:     SignerWithAddress;
 
-  // Real wallets for TEE simulation so we can sign raw EIP-712
-  const enclaveWallet = ethers.Wallet.createRandom();
-  const strangerWallet = ethers.Wallet.createRandom();
-
-  const MEASUREMENT = ethers.keccak256(ethers.toUtf8Bytes("tdx-measurement-v1"));
-  const FEE_BPS     = 10n; // 0.1%
-  const SHIELD_AMT  = ethers.parseUnits("100", 6);
-
-  let domainSep: string;
+  const FEE_BPS    = 10n;
+  const SHIELD_AMT = ethers.parseUnits("100", 6);
 
   beforeEach(async () => {
     [admin, user, recipient, feeRecipient, stranger] = await ethers.getSigners();
 
-    // Deploy mock ERC-20
-    usdc = await deployMockERC20(admin, ethers.parseUnits("1000000", 6));
+    usdc     = await deployMockERC20(admin, ethers.parseUnits("1000000", 6));
+    shieldV  = await deployMockVerifier();
+    spendV   = await deployMockVerifier();
+
     await usdc.transfer(user.address, ethers.parseUnits("10000", 6));
 
-    // Deploy AttestationVerifier and register our enclave wallet
-    av = await buildAV(admin);
-    await av.connect(admin).whitelistMeasurement(MEASUREMENT);
-    await av.connect(admin).registerEnclave(enclaveWallet.address, MEASUREMENT, "test-enclave");
-
-    // Deploy PrivacyPool
     const Factory = await ethers.getContractFactory("PrivacyPool");
     pool = (await upgrades.deployProxy(
       Factory,
-      [admin.address, await av.getAddress(), FEE_BPS, feeRecipient.address],
-      { kind: "uups" }
+      [
+        admin.address,
+        await shieldV.getAddress(),
+        await spendV.getAddress(),
+        FEE_BPS,
+        feeRecipient.address,
+      ],
+      { kind: "uups" },
     )) as unknown as PrivacyPool;
 
-    // Whitelist USDC
     await pool.connect(admin).whitelistToken(await usdc.getAddress());
-
-    // The pool passes structHash to AttestationVerifier.verifyAttestation(),
-    // which calls _hashTypedDataV4 using the AttestationVerifier's own domain.
-    domainSep = await av.domainSeparator();
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Signing helpers (build structHash exactly as the contract does, then sign)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  async function signUnshield(
-    wallet: ethers.Wallet,
-    params: {
-      token: string;
-      amount: bigint;
-      recipient: string;
-      nullifier: string;
-      newRoot: string;
-      deadline: bigint;
-      nonce: bigint;
-    }
-  ): Promise<string> {
-    const TYPEHASH = await pool.UNSHIELD_TYPEHASH();
-    const structHash = ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(
-        ["bytes32", "address", "uint256", "address", "bytes32", "bytes32", "uint256", "uint256"],
-        [TYPEHASH, params.token, params.amount, params.recipient, params.nullifier, params.newRoot, params.deadline, params.nonce]
-      )
-    );
-    return signRawEIP712(wallet, domainSep, structHash);
-  }
-
-  async function signPrivateAction(
-    wallet: ethers.Wallet,
-    params: {
-      nullifiers: string[];
-      newCommitments: string[];
-      newRoot: string;
-      deadline: bigint;
-      nonce: bigint;
-    }
-  ): Promise<string> {
-    const TYPEHASH = await pool.PRIVATE_ACTION_TYPEHASH();
-    // Contract uses abi.encodePacked for the arrays (raw byte concat, no length prefix)
-    const nullifiersHash     = ethers.keccak256(ethers.concat(params.nullifiers));
-    const commitmentsHash    = ethers.keccak256(ethers.concat(params.newCommitments));
-    const structHash = ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(
-        ["bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256"],
-        [TYPEHASH, nullifiersHash, commitmentsHash, params.newRoot, params.deadline, params.nonce]
-      )
-    );
-    return signRawEIP712(wallet, domainSep, structHash);
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Initialization
+  // Initialize
   // ─────────────────────────────────────────────────────────────────────────
 
   describe("initialize", () => {
-    it("sets initial fee and fee recipient", async () => {
+    it("sets fee and fee recipient", async () => {
       expect(await pool.protocolFeeBps()).to.equal(FEE_BPS);
       expect(await pool.feeRecipient()).to.equal(feeRecipient.address);
     });
 
-    it("sets attestation verifier", async () => {
-      expect(await pool.attestationVerifier()).to.equal(await av.getAddress());
+    it("exposes shieldVerifier and spendVerifier addresses", async () => {
+      expect(await pool.shieldVerifier()).to.equal(await shieldV.getAddress());
+      expect(await pool.spendVerifier()).to.equal(await spendV.getAddress());
     });
 
     it("reverts with zero admin", async () => {
-      const Factory = await ethers.getContractFactory("PrivacyPool");
+      const F = await ethers.getContractFactory("PrivacyPool");
       await expect(
         upgrades.deployProxy(
-          Factory,
-          [ethers.ZeroAddress, await av.getAddress(), FEE_BPS, feeRecipient.address],
-          { kind: "uups" }
-        )
+          F,
+          [ethers.ZeroAddress, await shieldV.getAddress(), await spendV.getAddress(), FEE_BPS, feeRecipient.address],
+          { kind: "uups" },
+        ),
       ).to.be.revertedWithCustomError(pool, "PP__ZeroAddress");
     });
 
     it("reverts with fee above MAX_FEE_BPS", async () => {
-      const Factory = await ethers.getContractFactory("PrivacyPool");
+      const F = await ethers.getContractFactory("PrivacyPool");
       await expect(
         upgrades.deployProxy(
-          Factory,
-          [admin.address, await av.getAddress(), 9999n, feeRecipient.address],
-          { kind: "uups" }
-        )
+          F,
+          [admin.address, await shieldV.getAddress(), await spendV.getAddress(), 9999n, feeRecipient.address],
+          { kind: "uups" },
+        ),
       ).to.be.revertedWithCustomError(pool, "PP__InvalidFee");
     });
   });
@@ -181,218 +109,245 @@ describe("PrivacyPool", () => {
   // Shield
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe("shield", () => {
+  describe("shield()", () => {
     beforeEach(async () => {
       await usdc.connect(user).approve(await pool.getAddress(), SHIELD_AMT);
     });
 
     it("accepts a valid shield and emits Shielded event", async () => {
-      const commitment = makeCommitment("note-1");
-      const fee        = (SHIELD_AMT * FEE_BPS) / 10000n;
-
+      const commitment = rndBytes32();
       await expect(
-        pool.connect(user).shield({ token: await usdc.getAddress(), amount: SHIELD_AMT, commitment })
+        pool.connect(user).shield(
+          { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment },
+          MOCK_PROOF,
+        ),
       ).to.emit(pool, "Shielded");
-
-      expect(await pool.isCommitmentKnown(commitment)).to.be.true;
     });
 
-    it("inserts commitment into tree and increments size", async () => {
-      const commitment = makeCommitment("note-2");
-      await pool.connect(user).shield({ token: await usdc.getAddress(), amount: SHIELD_AMT, commitment });
-      expect(await pool.isCommitmentKnown(commitment)).to.be.true;
+    it("inserts commitment into tree (size += 1)", async () => {
+      await pool.connect(user).shield(
+        { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: rndBytes32() },
+        MOCK_PROOF,
+      );
       expect(await pool.getTreeSize()).to.equal(1n);
     });
 
-    it("transfers fee to feeRecipient", async () => {
-      const commitment  = makeCommitment("note-3");
-      const expectedFee = (SHIELD_AMT * FEE_BPS) / 10000n;
-      const before      = await usdc.balanceOf(feeRecipient.address);
-      await pool.connect(user).shield({ token: await usdc.getAddress(), amount: SHIELD_AMT, commitment });
-      expect(await usdc.balanceOf(feeRecipient.address)).to.equal(before + expectedFee);
+    it("transfers protocol fee to feeRecipient", async () => {
+      const fee    = (SHIELD_AMT * FEE_BPS) / 10000n;
+      const before = await usdc.balanceOf(feeRecipient.address);
+      await pool.connect(user).shield(
+        { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: rndBytes32() },
+        MOCK_PROOF,
+      );
+      expect(await usdc.balanceOf(feeRecipient.address)).to.equal(before + fee);
+    });
+
+    it("reverts on invalid ZK proof (mock returns false)", async () => {
+      await shieldV.setResult(false);
+      await expect(
+        pool.connect(user).shield(
+          { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: rndBytes32() },
+          MOCK_PROOF,
+        ),
+      ).to.be.revertedWithCustomError(pool, "PP__InvalidZKProof");
     });
 
     it("reverts with non-whitelisted token", async () => {
       await expect(
-        pool.connect(user).shield({ token: ethers.ZeroAddress, amount: SHIELD_AMT, commitment: makeCommitment("x") })
+        pool.connect(user).shield(
+          { token: ethers.ZeroAddress, amount: SHIELD_AMT, commitment: rndBytes32() },
+          MOCK_PROOF,
+        ),
       ).to.be.revertedWithCustomError(pool, "PP__TokenNotWhitelisted");
     });
 
     it("reverts with zero amount", async () => {
       await expect(
-        pool.connect(user).shield({ token: await usdc.getAddress(), amount: 0n, commitment: makeCommitment("x") })
+        pool.connect(user).shield(
+          { token: await usdc.getAddress(), amount: 0n, commitment: rndBytes32() },
+          MOCK_PROOF,
+        ),
       ).to.be.revertedWithCustomError(pool, "PP__ZeroAmount");
     });
 
     it("reverts on duplicate commitment", async () => {
-      const commitment = makeCommitment("dupe");
-      await pool.connect(user).shield({ token: await usdc.getAddress(), amount: SHIELD_AMT, commitment });
+      const commitment = rndBytes32();
+      await pool.connect(user).shield(
+        { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment },
+        MOCK_PROOF,
+      );
       await usdc.connect(user).approve(await pool.getAddress(), SHIELD_AMT);
       await expect(
-        pool.connect(user).shield({ token: await usdc.getAddress(), amount: SHIELD_AMT, commitment })
+        pool.connect(user).shield(
+          { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment },
+          MOCK_PROOF,
+        ),
       ).to.be.revertedWithCustomError(pool, "PP__CommitmentAlreadyExists");
     });
 
     it("reverts when paused", async () => {
       await pool.connect(admin).pause();
       await expect(
-        pool.connect(user).shield({ token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: makeCommitment("p") })
+        pool.connect(user).shield(
+          { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: rndBytes32() },
+          MOCK_PROOF,
+        ),
       ).to.be.revertedWithCustomError(pool, "EnforcedPause");
     });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Unshield
+  // Spend (unshield path: publicAmount > 0)
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe("unshield", () => {
-    const UNSHIELD_AMT = ethers.parseUnits("50", 6);
-    let deadline: bigint;
-    let params: {
-      token: string;
-      amount: bigint;
-      recipient: string;
-      nullifier: string;
-      newRoot: string;
-      deadline: bigint;
-      nonce: bigint;
-    };
+  describe("spend() — unshield", () => {
+    const SPEND_AMT = ethers.parseUnits("50", 6);
 
-    beforeEach(async () => {
-      // Shield first so pool has funds
+    async function shieldFirst() {
       await usdc.connect(user).approve(await pool.getAddress(), SHIELD_AMT);
-      await pool.connect(user).shield({
-        token: await usdc.getAddress(),
-        amount: SHIELD_AMT,
-        commitment: makeCommitment("note-for-unshield"),
-      });
+      await pool.connect(user).shield(
+        { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: rndBytes32() },
+        MOCK_PROOF,
+      );
+    }
 
-      deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
-      params   = {
-        token:     await usdc.getAddress(),
-        amount:    UNSHIELD_AMT,
-        recipient: recipient.address,
-        nullifier: makeNullifier("unshield-1"),
-        newRoot:   ethers.keccak256(ethers.toUtf8Bytes("new-root-after-unshield")),
-        deadline,
-        nonce:     1n,
-      };
-    });
-
-    it("releases tokens to recipient on valid TEE signature", async () => {
-      const sig = await signUnshield(enclaveWallet, params);
-      const fee = (UNSHIELD_AMT * FEE_BPS) / 10000n;
-
+    it("releases tokens to recipient on valid proof", async () => {
+      await shieldFirst();
+      const currentRoot = await pool.getRoot();
+      const null1 = rndBytes32(), null2 = ethers.ZeroHash;
+      const fee = (SPEND_AMT * FEE_BPS) / 10000n;
       const before = await usdc.balanceOf(recipient.address);
-      await expect(pool.unshield(params, sig)).to.emit(pool, "Unshielded");
-      expect(await usdc.balanceOf(recipient.address)).to.equal(before + UNSHIELD_AMT - fee);
-    });
 
-    it("marks nullifier as spent", async () => {
-      const sig = await signUnshield(enclaveWallet, params);
-      await pool.unshield(params, sig);
-      expect(await pool.isNullifierSpent(params.nullifier)).to.be.true;
-    });
-
-    it("reverts on double spend of nullifier", async () => {
-      const sig = await signUnshield(enclaveWallet, params);
-      await pool.unshield(params, sig);
-      // Same nullifier, different nonce
-      const params2 = { ...params, nonce: 2n };
-      const sig2    = await signUnshield(enclaveWallet, params2);
-      await expect(pool.unshield(params2, sig2)).to.be.revertedWithCustomError(
-        pool,
-        "PP__NullifierAlreadySpent"
+      await pool.spend(
+        {
+          token:          await usdc.getAddress(),
+          merkleRoot:     currentRoot,
+          nullifiers:     [null1, null2],
+          newCommitments: [ethers.ZeroHash, ethers.ZeroHash],
+          publicAmount:   SPEND_AMT,
+          recipient:      recipient.address,
+        },
+        MOCK_PROOF,
       );
+
+      expect(await usdc.balanceOf(recipient.address)).to.equal(before + SPEND_AMT - fee);
     });
 
-    it("reverts on expired deadline", async () => {
-      const expiredParams = { ...params, deadline: 1n };
-      const sig = await signUnshield(enclaveWallet, expiredParams);
-      await expect(pool.unshield(expiredParams, sig)).to.be.revertedWithCustomError(
-        pool,
-        "PP__AttestationExpired"
+    it("marks nullifiers as spent", async () => {
+      await shieldFirst();
+      const currentRoot = await pool.getRoot();
+      const null1 = rndBytes32();
+
+      await pool.spend(
+        {
+          token:          await usdc.getAddress(),
+          merkleRoot:     currentRoot,
+          nullifiers:     [null1, ethers.ZeroHash],
+          newCommitments: [ethers.ZeroHash, ethers.ZeroHash],
+          publicAmount:   SPEND_AMT,
+          recipient:      recipient.address,
+        },
+        MOCK_PROOF,
       );
+
+      expect(await pool.isNullifierSpent(null1)).to.be.true;
     });
 
-    it("reverts if signed by unknown wallet", async () => {
-      const sig = await signUnshield(strangerWallet, params);
-      await expect(pool.unshield(params, sig)).to.be.reverted;
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Private Action
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe("privateAction", () => {
-    let params: {
-      nullifiers:     string[];
-      newCommitments: string[];
-      newRoot:        string;
-      deadline:       bigint;
-      nonce:          bigint;
-    };
-
-    beforeEach(async () => {
-      // Shield so pool has something in it
-      await usdc.connect(user).approve(await pool.getAddress(), SHIELD_AMT);
-      await pool.connect(user).shield({
-        token: await usdc.getAddress(),
-        amount: SHIELD_AMT,
-        commitment: makeCommitment("initial-note"),
-      });
-
-      params = {
-        nullifiers:     [makeNullifier("pa-null-1")],
-        newCommitments: [makeCommitment("pa-new-note-1"), makeCommitment("pa-new-note-2")],
-        newRoot:        ethers.keccak256(ethers.toUtf8Bytes("pa-root")),
-        deadline:       BigInt(Math.floor(Date.now() / 1000) + 3600),
-        nonce:          10n,
+    it("reverts on double spend", async () => {
+      await shieldFirst();
+      const currentRoot = await pool.getRoot();
+      const null1 = rndBytes32();
+      const params = {
+        token:          await usdc.getAddress(),
+        merkleRoot:     currentRoot,
+        nullifiers:     [null1, ethers.ZeroHash] as [string, string],
+        newCommitments: [ethers.ZeroHash, ethers.ZeroHash] as [string, string],
+        publicAmount:   SPEND_AMT,
+        recipient:      recipient.address,
       };
-    });
 
-    it("inserts new commitments and emits event on valid attestation", async () => {
-      const sig = await signPrivateAction(enclaveWallet, params);
-      await expect(pool.privateAction(params, sig))
-        .to.emit(pool, "PrivateActionExecuted")
-        .withArgs(params.newRoot, params.nullifiers, params.newCommitments);
-
-      for (const c of params.newCommitments) {
-        expect(await pool.isCommitmentKnown(c)).to.be.true;
-      }
-    });
-
-    it("marks all nullifiers as spent", async () => {
-      const sig = await signPrivateAction(enclaveWallet, params);
-      await pool.privateAction(params, sig);
-      expect(await pool.isNullifierSpent(params.nullifiers[0])).to.be.true;
-    });
-
-    it("reverts on double-spent nullifier", async () => {
-      const sig = await signPrivateAction(enclaveWallet, params);
-      await pool.privateAction(params, sig);
-      // Same nullifier, different nonce, fresh commitments
-      const params2 = { ...params, nonce: 11n, newCommitments: [makeCommitment("fresh-note")] };
-      const sig2    = await signPrivateAction(enclaveWallet, params2);
-      await expect(pool.privateAction(params2, sig2)).to.be.revertedWithCustomError(
+      await pool.spend(params, MOCK_PROOF);
+      await expect(pool.spend(params, MOCK_PROOF)).to.be.revertedWithCustomError(
         pool,
-        "PP__NullifierAlreadySpent"
+        "PP__NullifierAlreadySpent",
       );
     });
 
-    it("reverts with empty nullifiers array", async () => {
-      const bad = { ...params, nullifiers: [] };
-      const sig = await signPrivateAction(enclaveWallet, bad);
-      await expect(pool.privateAction(bad, sig)).to.be.revertedWithCustomError(
-        pool,
-        "PP__EmptyNullifiers"
-      );
+    it("reverts on stale merkle root", async () => {
+      await shieldFirst();
+      await expect(
+        pool.spend(
+          {
+            token:          await usdc.getAddress(),
+            merkleRoot:     rndBytes32(),
+            nullifiers:     [rndBytes32(), ethers.ZeroHash],
+            newCommitments: [ethers.ZeroHash, ethers.ZeroHash],
+            publicAmount:   SPEND_AMT,
+            recipient:      recipient.address,
+          },
+          MOCK_PROOF,
+        ),
+      ).to.be.revertedWithCustomError(pool, "PP__InvalidMerkleRoot");
+    });
+
+    it("reverts on invalid ZK proof (mock returns false)", async () => {
+      await shieldFirst();
+      await spendV.setResult(false);
+      const currentRoot = await pool.getRoot();
+      await expect(
+        pool.spend(
+          {
+            token:          await usdc.getAddress(),
+            merkleRoot:     currentRoot,
+            nullifiers:     [rndBytes32(), ethers.ZeroHash],
+            newCommitments: [ethers.ZeroHash, ethers.ZeroHash],
+            publicAmount:   SPEND_AMT,
+            recipient:      recipient.address,
+          },
+          MOCK_PROOF,
+        ),
+      ).to.be.revertedWithCustomError(pool, "PP__InvalidZKProof");
     });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Admin operations
+  // Spend (private transfer path: publicAmount == 0)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("spend() — private transfer", () => {
+    it("inserts new commitments without releasing tokens", async () => {
+      await usdc.connect(user).approve(await pool.getAddress(), SHIELD_AMT);
+      await pool.connect(user).shield(
+        { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: rndBytes32() },
+        MOCK_PROOF,
+      );
+
+      const currentRoot  = await pool.getRoot();
+      const newCommit1   = rndBytes32();
+      const newCommit2   = rndBytes32();
+      const poolBefore   = await usdc.balanceOf(await pool.getAddress());
+
+      await pool.spend(
+        {
+          token:          await usdc.getAddress(),
+          merkleRoot:     currentRoot,
+          nullifiers:     [rndBytes32(), ethers.ZeroHash],
+          newCommitments: [newCommit1, newCommit2],
+          publicAmount:   0n,
+          recipient:      ethers.ZeroAddress,
+        },
+        MOCK_PROOF,
+      );
+
+      expect(await pool.isCommitmentKnown(newCommit1)).to.be.true;
+      expect(await pool.isCommitmentKnown(newCommit2)).to.be.true;
+      expect(await usdc.balanceOf(await pool.getAddress())).to.equal(poolBefore); // no tokens moved
+      expect(await pool.getTreeSize()).to.equal(3n); // 1 from shield + 2 new
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Admin
   // ─────────────────────────────────────────────────────────────────────────
 
   describe("admin", () => {
@@ -404,60 +359,47 @@ describe("PrivacyPool", () => {
     });
 
     it("reverts fee above MAX_FEE_BPS", async () => {
-      await expect(pool.connect(admin).setProtocolFee(9999n)).to.be.revertedWithCustomError(
-        pool,
-        "PP__InvalidFee"
-      );
+      await expect(pool.connect(admin).setProtocolFee(9999n))
+        .to.be.revertedWithCustomError(pool, "PP__InvalidFee");
     });
 
-    it("updates fee recipient", async () => {
+    it("updates fee recipient and emits event", async () => {
       await expect(pool.connect(admin).setFeeRecipient(stranger.address))
         .to.emit(pool, "FeeRecipientUpdated")
         .withArgs(feeRecipient.address, stranger.address, admin.address);
     });
 
-    it("pause blocks shield", async () => {
-      await pool.connect(admin).pause();
-      await usdc.connect(user).approve(await pool.getAddress(), SHIELD_AMT);
-      await expect(
-        pool.connect(user).shield({
-          token: await usdc.getAddress(),
-          amount: SHIELD_AMT,
-          commitment: makeCommitment("p"),
-        })
-      ).to.be.revertedWithCustomError(pool, "EnforcedPause");
-      await pool.connect(admin).unpause();
+    it("non-admin cannot update fee", async () => {
+      await expect(pool.connect(stranger).setProtocolFee(50n)).to.be.reverted;
     });
 
-    it("emergency withdraw transfers tokens", async () => {
+    it("emergency withdraw transfers pool tokens to admin", async () => {
       await usdc.connect(user).approve(await pool.getAddress(), SHIELD_AMT);
-      await pool.connect(user).shield({
-        token: await usdc.getAddress(),
-        amount: SHIELD_AMT,
-        commitment: makeCommitment("ew-note"),
-      });
-
-      const poolBalance = await pool.getTokenBalance(await usdc.getAddress());
-      const before      = await usdc.balanceOf(admin.address);
-      await pool.connect(admin).emergencyWithdraw(await usdc.getAddress(), admin.address, poolBalance);
-      expect(await usdc.balanceOf(admin.address)).to.equal(before + poolBalance);
+      await pool.connect(user).shield(
+        { token: await usdc.getAddress(), amount: SHIELD_AMT, commitment: rndBytes32() },
+        MOCK_PROOF,
+      );
+      const poolBal = await pool.getTokenBalance(await usdc.getAddress());
+      const before  = await usdc.balanceOf(admin.address);
+      await pool.connect(admin).emergencyWithdraw(await usdc.getAddress(), admin.address, poolBal);
+      expect(await usdc.balanceOf(admin.address)).to.equal(before + poolBal);
     });
 
     it("non-admin cannot emergency withdraw", async () => {
       await expect(
-        pool.connect(stranger).emergencyWithdraw(await usdc.getAddress(), stranger.address, 1n)
+        pool.connect(stranger).emergencyWithdraw(await usdc.getAddress(), stranger.address, 1n),
       ).to.be.reverted;
     });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Upgradeability
+  // Upgrade
   // ─────────────────────────────────────────────────────────────────────────
 
   describe("upgrade", () => {
     it("can be upgraded by UPGRADER_ROLE", async () => {
-      const Factory = await ethers.getContractFactory("PrivacyPool");
-      await expect(upgrades.upgradeProxy(await pool.getAddress(), Factory)).to.not.be.reverted;
+      const F = await ethers.getContractFactory("PrivacyPool");
+      await expect(upgrades.upgradeProxy(await pool.getAddress(), F)).to.not.be.reverted;
     });
   });
 });
