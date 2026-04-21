@@ -2,18 +2,16 @@ import { expect } from "chai";
 import sinon from "sinon";
 import { ethers } from "ethers";
 import { StealthPaySDK } from "../src/StealthPaySDK";
-import { EngineClient } from "../src/EngineClient";
 import { ChainClient } from "../src/ChainClient";
-import { StealthPayConfig } from "../src/types";
+import { StealthPayConfig, Note } from "../src/types";
+import { StealthPayError } from "../src/types";
+import { deriveSpendingPubkey } from "../src/poseidon2";
+import * as ProofGenerator from "../src/ProofGenerator";
 
-const TOKEN      = ethers.Wallet.createRandom().address;
-const OWNER      = ethers.Wallet.createRandom().address;
-const RECIPIENT  = ethers.Wallet.createRandom().address;
-const COMMITMENT = ethers.hexlify(ethers.randomBytes(32));
-const NULL_HASH  = ethers.hexlify(ethers.randomBytes(32));
-const ROOT_HASH  = ethers.hexlify(ethers.randomBytes(32));
-const TEE_SIG    = ethers.hexlify(ethers.randomBytes(65));
-const TX_HASH    = ethers.hexlify(ethers.randomBytes(32));
+const TOKEN     = ethers.Wallet.createRandom().address;
+const RECIPIENT = ethers.Wallet.createRandom().address;
+const TX_HASH   = ethers.hexlify(ethers.randomBytes(32));
+const PRIVKEY   = 0xdeadbeefcafebaben;
 
 function fakeReceipt(): ethers.TransactionReceipt {
   return { hash: TX_HASH, status: 1 } as unknown as ethers.TransactionReceipt;
@@ -21,21 +19,21 @@ function fakeReceipt(): ethers.TransactionReceipt {
 
 function makeSdk() {
   const signer = {
-    getAddress: async () => OWNER,
+    getAddress: async () => ethers.Wallet.createRandom().address,
   } as unknown as ethers.Signer;
 
   const config: StealthPayConfig = {
     signer,
-    engineUrl:          "http://engine.test",
     privacyPoolAddress: ethers.Wallet.createRandom().address,
-    apiKey:             "test-key",
+    spendingPrivkey:    PRIVKEY,
   };
 
   const sdk = new StealthPaySDK(config);
-  return { sdk, engine: (sdk as unknown as { engine: EngineClient }).engine, chain: (sdk as unknown as { chain: ChainClient }).chain };
+  const chain = (sdk as unknown as { chain: ChainClient }).chain;
+  return { sdk, chain };
 }
 
-describe("StealthPaySDK", () => {
+describe("StealthPaySDK (V2 — ZK proof flow)", () => {
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => { sandbox = sinon.createSandbox(); });
@@ -44,97 +42,130 @@ describe("StealthPaySDK", () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe("shield()", () => {
-    it("approves, shields on-chain, notifies engine, returns ShieldResult", async () => {
-      const { sdk, engine, chain } = makeSdk();
+    it("calls approveIfNeeded, shield on-chain, and waits for event", async () => {
+      const { sdk, chain } = makeSdk();
+      const fakeCommitment = 0x1234abcdn;
 
       sandbox.stub(chain, "approveIfNeeded").resolves();
+      sandbox.stub(ProofGenerator, "generateShieldProof").resolves({
+        proof: new Uint8Array(10),
+        commitment: fakeCommitment,
+      });
       sandbox.stub(chain, "shield").resolves(fakeReceipt());
-      sandbox.stub(engine, "notifyShield").resolves({ commitment: COMMITMENT, message: "ok" });
+      sandbox.stub(chain, "waitForShieldEvent").resolves({
+        txHash: TX_HASH, amount: 1_000_000n, token: TOKEN, leafIndex: 0n,
+      });
 
       const result = await sdk.shield(TOKEN, 1_000_000n);
 
       expect(result.txHash).to.equal(TX_HASH);
       expect(result.amount).to.equal(1_000_000n);
       expect(result.token).to.equal(TOKEN);
-      expect(result.commitment).to.match(/^0x[0-9a-f]{64}$/i);
+      expect(result.commitment).to.equal(fakeCommitment);
     });
-  });
 
-  // ─────────────────────────────────────────────────────────────────────────
+    it("adds note to internal note store after shielding", async () => {
+      const { sdk, chain } = makeSdk();
+      const fakeCommitment = 0xabcdef01n;
 
-  describe("unshield()", () => {
-    it("requests engine signature and submits on-chain", async () => {
-      const { sdk, engine, chain } = makeSdk();
-
-      sandbox.stub(engine, "requestUnshield").resolves({
-        teeSignature: TEE_SIG,
-        onChainParams: {
-          token:     TOKEN,
-          amount:    "1000000",
-          recipient: RECIPIENT,
-          nullifier: NULL_HASH,
-          newRoot:   ROOT_HASH,
-          deadline:  "9999999999",
-          nonce:     "1",
-        },
+      sandbox.stub(chain, "approveIfNeeded").resolves();
+      sandbox.stub(ProofGenerator, "generateShieldProof").resolves({
+        proof: new Uint8Array(10),
+        commitment: fakeCommitment,
       });
-      sandbox.stub(chain, "unshield").resolves(fakeReceipt());
-
-      const result = await sdk.unshield(COMMITMENT, RECIPIENT);
-
-      expect(result.txHash).to.equal(TX_HASH);
-      expect(result.amount).to.equal(1_000_000n);
-      expect(result.recipient).to.equal(RECIPIENT);
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe("privateSend()", () => {
-    it("requests private transfer from engine and submits on-chain", async () => {
-      const { sdk, engine, chain } = makeSdk();
-
-      const receiverCommitment = ethers.hexlify(ethers.randomBytes(32));
-      sandbox.stub(engine, "requestPrivateTransfer").resolves({
-        teeSignature: TEE_SIG,
-        onChainParams: {
-          nullifiers:     [NULL_HASH],
-          newCommitments: [receiverCommitment],
-          newRoot:        ROOT_HASH,
-          deadline:       "9999999999",
-          nonce:          "1",
-        },
-        receiverCommitment,
-        changeCommitment: null,
+      sandbox.stub(chain, "shield").resolves(fakeReceipt());
+      sandbox.stub(chain, "waitForShieldEvent").resolves({
+        txHash: TX_HASH, amount: 500_000n, token: TOKEN, leafIndex: 7n,
       });
-      sandbox.stub(chain, "privateAction").resolves(fakeReceipt());
 
-      const result = await sdk.privateSend(COMMITMENT, RECIPIENT, TOKEN, 500_000n);
+      await sdk.shield(TOKEN, 500_000n);
 
-      expect(result.txHash).to.equal(TX_HASH);
-      expect(result.receiverCommitment).to.equal(receiverCommitment);
-      expect(result.changeCommitment).to.be.null;
+      const notes = sdk.getNotes(TOKEN);
+      expect(notes).to.have.length(1);
+      expect(notes[0].commitment).to.equal(fakeCommitment);
+      expect(notes[0].amount).to.equal(500_000n);
+      expect(notes[0].index).to.equal(7);
+      expect(notes[0].spent).to.be.false;
     });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
 
   describe("getPrivateBalance()", () => {
-    it("returns parsed balance from engine", async () => {
-      const { sdk, engine } = makeSdk();
+    it("returns zero for unknown token", () => {
+      const { sdk } = makeSdk();
+      const result = sdk.getPrivateBalance(TOKEN);
+      expect(result.balance).to.equal(0n);
+      expect(result.noteCount).to.equal(0);
+    });
 
-      sandbox.stub(engine, "getBalance").resolves({
-        owner:     OWNER,
-        token:     TOKEN,
-        balance:   "3000000",
-        noteCount: 3,
+    it("sums unspent notes for given token", async () => {
+      const { sdk, chain } = makeSdk();
+
+      sandbox.stub(chain, "approveIfNeeded").resolves();
+      sandbox.stub(ProofGenerator, "generateShieldProof")
+        .onFirstCall().resolves({ proof: new Uint8Array(10), commitment: 1n })
+        .onSecondCall().resolves({ proof: new Uint8Array(10), commitment: 2n });
+      sandbox.stub(chain, "shield").resolves(fakeReceipt());
+      sandbox.stub(chain, "waitForShieldEvent")
+        .onFirstCall().resolves({ txHash: TX_HASH, amount: 100n, token: TOKEN, leafIndex: 0n })
+        .onSecondCall().resolves({ txHash: TX_HASH, amount: 200n, token: TOKEN, leafIndex: 1n });
+
+      await sdk.shield(TOKEN, 100n);
+      await sdk.shield(TOKEN, 200n);
+
+      const result = sdk.getPrivateBalance(TOKEN);
+      expect(result.balance).to.equal(300n);
+      expect(result.noteCount).to.equal(2);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("updateNoteSiblings()", () => {
+    it("updates siblings on existing note", async () => {
+      const { sdk, chain } = makeSdk();
+      const commitment = 0x999n;
+
+      sandbox.stub(chain, "approveIfNeeded").resolves();
+      sandbox.stub(ProofGenerator, "generateShieldProof").resolves({
+        proof: new Uint8Array(10), commitment,
+      });
+      sandbox.stub(chain, "shield").resolves(fakeReceipt());
+      sandbox.stub(chain, "waitForShieldEvent").resolves({
+        txHash: TX_HASH, amount: 1n, token: TOKEN, leafIndex: 3n,
       });
 
-      const result = await sdk.getPrivateBalance(TOKEN);
+      await sdk.shield(TOKEN, 1n);
 
-      expect(result.balance).to.equal(3_000_000n);
-      expect(result.noteCount).to.equal(3);
-      expect(result.owner).to.equal(OWNER);
+      const siblings = Array.from({ length: 20 }, (_, i) => BigInt(i + 1));
+      sdk.updateNoteSiblings(commitment, siblings);
+
+      const note = sdk.getNotes(TOKEN)[0];
+      expect(note.siblings[0]).to.equal(1n);
+      expect(note.siblings[19]).to.equal(20n);
+    });
+
+    it("throws StealthPayError for unknown commitment", () => {
+      const { sdk } = makeSdk();
+      expect(() => sdk.updateNoteSiblings(0xdeadn, [])).to.throw(StealthPayError);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("_selectNotes (via unshield error path)", () => {
+    it("throws INSUFFICIENT_BALANCE when no notes exist", async () => {
+      const { sdk, chain } = makeSdk();
+      sandbox.stub(chain, "getRoot").resolves(0n);
+
+      try {
+        await sdk.unshield(TOKEN, 1_000n, RECIPIENT);
+        expect.fail("should have thrown");
+      } catch (err: unknown) {
+        expect(err).to.be.instanceOf(StealthPayError);
+        expect((err as StealthPayError).code).to.equal("INSUFFICIENT_BALANCE");
+      }
     });
   });
 });
