@@ -1,16 +1,15 @@
 import fs from "fs";
 import path from "path";
-import { ethers } from "ethers";
 
 export interface DeploymentRecord {
-  network:                    string;
-  chainId:                    number;
-  deployedAt:                 string;
-  deployer:                   string;
-  AttestationVerifierImpl:    string;
-  AttestationVerifierProxy:   string;
-  PrivacyPoolImpl:            string;
-  PrivacyPoolProxy:           string;
+  network:            string;
+  chainId:            number;
+  deployedAt:         string;
+  deployer:           string;
+  ShieldVerifier:     string;
+  SpendVerifier:      string;
+  PrivacyPoolImpl:    string;
+  PrivacyPoolProxy:   string;
 }
 
 const DEPLOYMENTS_DIR = path.join(__dirname, "..", "deployments");
