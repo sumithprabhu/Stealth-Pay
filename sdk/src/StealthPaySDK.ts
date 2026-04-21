@@ -1,131 +1,221 @@
 import { ethers } from "ethers";
 import {
   StealthPayConfig,
+  Note,
   ShieldResult,
   UnshieldResult,
   PrivateSendResult,
   PrivateBalanceResult,
   StealthPayError,
 } from "./types";
-import { computeCommitment, generateSalt } from "./crypto";
-import { EngineClient } from "./EngineClient";
 import { ChainClient } from "./ChainClient";
+import { NoteManager, ManagedNote } from "./NoteManager";
+import {
+  generateShieldProof,
+  generateSpendProof,
+  deriveSpendingPubkey,
+  SpendNote,
+  OutputNote,
+} from "./ProofGenerator";
+import { BN254_PRIME } from "./poseidon2";
+
+function randomField(): bigint {
+  const bytes = ethers.randomBytes(32);
+  return BigInt(ethers.hexlify(bytes)) % BN254_PRIME;
+}
+
+function toSpendNote(n: ManagedNote): SpendNote {
+  return { amount: n.amount, salt: n.salt, index: n.index, siblings: n.siblings };
+}
 
 export class StealthPaySDK {
-  private readonly engine:  EngineClient;
-  private readonly chain:   ChainClient;
-  private readonly config:  StealthPayConfig;
+  private readonly chain:  ChainClient;
+  private readonly config: StealthPayConfig;
+  readonly noteManager:    NoteManager;
+  private stopListening?:  () => void;
 
   constructor(config: StealthPayConfig) {
-    this.config = config;
-    this.engine = new EngineClient(config.engineUrl, config.apiKey);
-    this.chain  = new ChainClient(config.privacyPoolAddress, config.signer);
+    this.config      = config;
+    this.chain       = new ChainClient(config.privacyPoolAddress, config.signer);
+    this.noteManager = new NoteManager(config.spendingPrivkey, this.chain.pool);
   }
 
   /**
-   * Shield tokens: approve ERC-20, call shield() on-chain, then notify the engine
-   * so it creates an encrypted note in 0G Storage.
+   * Replay historical events and start listening for new ones.
+   * Call once after construction, before shielding or spending.
+   */
+  async sync(provider: ethers.Provider, fromBlock = 0): Promise<void> {
+    await this.noteManager.syncFromChain(provider, this.config.privacyPoolAddress, fromBlock);
+    this.stopListening = this.noteManager.startListening();
+  }
+
+  /** Stop live event subscription. */
+  disconnect(): void {
+    this.stopListening?.();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Shield
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Shield tokens: approve ERC-20 → generate ZK proof → call shield() on-chain.
    */
   async shield(token: string, amount: bigint): Promise<ShieldResult> {
-    const owner = await this.config.signer.getAddress();
-    const salt  = generateSalt();
-    const commitment = computeCommitment(owner, token, amount, salt);
-
     await this.chain.approveIfNeeded(token, amount);
 
-    const receipt = await this.chain.shield({ token, amount, commitment });
+    const salt = randomField();
 
-    // Engine waits for the Shielded event internally; just notify it now
-    await this.engine.notifyShield(owner, token, amount, commitment);
-
-    return {
-      txHash:     receipt.hash,
-      commitment,
-      amount,
+    const { proof, commitment } = await generateShieldProof({
+      spendingPrivkey: this.config.spendingPrivkey,
       token,
-    };
+      amount,
+      salt,
+    });
+
+    const receipt = await this.chain.shield({ token, amount, commitment, proof });
+
+    const event = await this.chain.waitForShieldEvent(
+      commitment,
+      this.config.confirmTimeoutMs ?? 120_000,
+    );
+
+    this.noteManager.trackNote(commitment, token, amount, salt, Number(event.leafIndex));
+
+    return { txHash: receipt.hash, commitment, amount, token };
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Unshield
+  // ─────────────────────────────────────────────────────────────────────────
+
   /**
-   * Unshield tokens: ask engine to sign the unshield, then submit on-chain.
+   * Unshield tokens: pick notes covering amount → generate ZK proof → spend().
+   * Any change is re-shielded as a new note owned by this key.
    */
   async unshield(
-    commitment: string,
-    recipient:  string,
+    token:     string,
+    amount:    bigint,
+    recipient: string,
   ): Promise<UnshieldResult> {
-    const engineResp = await this.engine.requestUnshield(commitment, recipient);
-    const p = engineResp.onChainParams;
+    const { inputNotes, change } = this._selectNotes(token, amount);
+    const merkleRoot = this.noteManager.getCurrentRoot();
 
-    const receipt = await this.chain.unshield(
-      {
-        token:     p.token,
-        amount:    BigInt(p.amount),
-        recipient: p.recipient,
-        nullifier: p.nullifier,
-        newRoot:   p.newRoot,
-        deadline:  BigInt(p.deadline),
-        nonce:     BigInt(p.nonce),
-      },
-      engineResp.teeSignature,
-    );
+    const changePubkey = deriveSpendingPubkey(this.config.spendingPrivkey);
+    const changeSalt   = change > 0n ? randomField() : 0n;
 
-    return {
-      txHash:    receipt.hash,
-      amount:    BigInt(p.amount),
-      token:     p.token,
-      recipient: p.recipient,
-    };
+    const outputSlots: [OutputNote | null, OutputNote | null] = [
+      change > 0n ? { receiverPubkey: changePubkey, amount: change, salt: changeSalt } : null,
+      null,
+    ];
+
+    const { proof, nullifiers, newCommitments } = await generateSpendProof({
+      spendingPrivkey: this.config.spendingPrivkey,
+      token,
+      merkleRoot,
+      inputNotes: [toSpendNote(inputNotes[0]), inputNotes[1] ? toSpendNote(inputNotes[1]) : null],
+      outputNotes: outputSlots,
+      publicAmount: amount,
+      recipient,
+    });
+
+    const receipt = await this.chain.spend({
+      token, merkleRoot, nullifiers, newCommitments,
+      publicAmount: amount, recipient, proof,
+    });
+
+    for (const n of inputNotes) n.spent = true;
+
+    return { txHash: receipt.hash, amount, token, recipient };
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Private send
+  // ─────────────────────────────────────────────────────────────────────────
+
   /**
-   * Private transfer: ask engine to route funds from sender note to receiver.
-   * The engine creates a new note for the receiver; any change note stays with sender.
+   * Private transfer to a receiver identified by their spending pubkey.
    */
   async privateSend(
-    senderCommitment: string,
-    receiverAddress:  string,
-    token:            string,
-    amount:           bigint,
+    token:          string,
+    amount:         bigint,
+    receiverPubkey: bigint,
   ): Promise<PrivateSendResult> {
-    const engineResp = await this.engine.requestPrivateTransfer(
-      senderCommitment,
-      receiverAddress,
-      token,
-      amount,
-    );
-    const p = engineResp.onChainParams;
+    const { inputNotes, change } = this._selectNotes(token, amount);
+    const merkleRoot   = this.noteManager.getCurrentRoot();
+    const changePubkey = deriveSpendingPubkey(this.config.spendingPrivkey);
+    const receiverSalt = randomField();
+    const changeSalt   = change > 0n ? randomField() : 0n;
 
-    const receipt = await this.chain.privateAction(
-      {
-        nullifiers:     p.nullifiers,
-        newCommitments: p.newCommitments,
-        newRoot:        p.newRoot,
-        deadline:       BigInt(p.deadline),
-        nonce:          BigInt(p.nonce),
-      },
-      engineResp.teeSignature,
-    );
+    const outputSlots: [OutputNote | null, OutputNote | null] = [
+      { receiverPubkey, amount, salt: receiverSalt },
+      change > 0n ? { receiverPubkey: changePubkey, amount: change, salt: changeSalt } : null,
+    ];
+
+    const { proof, nullifiers, newCommitments } = await generateSpendProof({
+      spendingPrivkey: this.config.spendingPrivkey,
+      token,
+      merkleRoot,
+      inputNotes: [toSpendNote(inputNotes[0]), inputNotes[1] ? toSpendNote(inputNotes[1]) : null],
+      outputNotes: outputSlots,
+      publicAmount: 0n,
+      recipient:    ethers.ZeroAddress,
+    });
+
+    const receipt = await this.chain.spend({
+      token, merkleRoot, nullifiers, newCommitments,
+      publicAmount: 0n, recipient: ethers.ZeroAddress, proof,
+    });
+
+    for (const n of inputNotes) n.spent = true;
 
     return {
       txHash:             receipt.hash,
-      amount,
-      token,
-      receiverCommitment: engineResp.receiverCommitment,
-      changeCommitment:   engineResp.changeCommitment,
+      amount, token,
+      receiverCommitment: newCommitments[0],
+      changeCommitment:   change > 0n ? newCommitments[1] : null,
     };
   }
 
-  /**
-   * Query the engine for the caller's private balance.
-   */
-  async getPrivateBalance(token: string): Promise<PrivateBalanceResult> {
-    const owner = await this.config.signer.getAddress();
-    const resp  = await this.engine.getBalance(owner, token);
-    return {
-      owner:     resp.owner,
-      token:     resp.token,
-      balance:   BigInt(resp.balance),
-      noteCount: resp.noteCount,
-    };
+  // ─────────────────────────────────────────────────────────────────────────
+  // Balance / notes
+  // ─────────────────────────────────────────────────────────────────────────
+
+  getPrivateBalance(token: string): PrivateBalanceResult {
+    const unspent = this.noteManager.getUnspentNotes(token);
+    const balance = unspent.reduce((acc, n) => acc + n.amount, 0n);
+    return { token, balance, noteCount: unspent.length };
+  }
+
+  getNotes(token?: string): ManagedNote[] {
+    return this.noteManager.getUnspentNotes(token);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Internal helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private _selectNotes(token: string, amount: bigint): { inputNotes: ManagedNote[]; change: bigint } {
+    const unspent = this.noteManager.getUnspentNotes(token);
+    unspent.sort((a, b) => (a.amount < b.amount ? -1 : 1));
+
+    const selected: ManagedNote[] = [];
+    let total = 0n;
+
+    for (const note of unspent) {
+      if (total >= amount) break;
+      selected.push(note);
+      total += note.amount;
+      if (selected.length === 2) break;
+    }
+
+    if (total < amount) {
+      throw new StealthPayError(
+        `Insufficient balance for ${token}: have ${total}, need ${amount}`,
+        "INSUFFICIENT_BALANCE",
+      );
+    }
+
+    return { inputNotes: selected, change: total - amount };
   }
 }

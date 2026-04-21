@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { StealthPayError } from "./types";
+import { fieldToBytes32 } from "./poseidon2";
 
 const ERC20_ABI = [
   "function approve(address spender, uint256 amount) returns (bool)",
@@ -7,46 +8,36 @@ const ERC20_ABI = [
 ];
 
 const POOL_ABI = [
-  // shield
-  "function shield(tuple(address token, uint256 amount, bytes32 commitment) params)",
-  // unshield
-  "function unshield(tuple(address token, uint256 amount, address recipient, bytes32 nullifier, bytes32 newRoot, uint256 deadline, uint256 nonce) params, bytes teeSignature)",
-  // privateAction
-  "function privateAction(tuple(bytes32[] nullifiers, bytes32[] newCommitments, bytes32 newRoot, uint256 deadline, uint256 nonce) params, bytes teeSignature)",
-  // views
-  "function currentRoot() view returns (bytes32)",
+  "function shield(tuple(address token, uint256 amount, bytes32 commitment) params, bytes proof) external",
+  "function spend(tuple(address token, bytes32 merkleRoot, bytes32[2] nullifiers, bytes32[2] newCommitments, uint256 publicAmount, address recipient) params, bytes proof) external",
+  "function getRoot() view returns (bytes32)",
+  "function getTreeSize() view returns (uint256)",
   "function isNullifierSpent(bytes32 nullifier) view returns (bool)",
+  "function isCommitmentKnown(bytes32 commitment) view returns (bool)",
   "function isTokenWhitelisted(address token) view returns (bool)",
-  // events
-  "event Shielded(address indexed token, address indexed depositor, uint256 amount, uint256 fee, bytes32 indexed commitment, bytes32 newRoot, uint256 leafIndex)",
+  "event Shielded(address indexed token, address indexed depositor, uint256 netAmount, uint256 fee, bytes32 indexed commitment, bytes32 newRoot, uint256 leafIndex)",
+  "event Spent(address indexed token, bytes32[2] nullifiers, bytes32[2] newCommitments, uint256 publicAmount, address indexed recipient, bytes32 newRoot)",
 ];
 
 export interface ShieldOnChainParams {
   token:      string;
   amount:     bigint;
-  commitment: string;
+  commitment: bigint;
+  proof:      Uint8Array;
 }
 
-export interface UnshieldOnChainParams {
-  token:      string;
-  amount:     bigint;
-  recipient:  string;
-  nullifier:  string;
-  newRoot:    string;
-  deadline:   bigint;
-  nonce:      bigint;
-}
-
-export interface PrivateActionOnChainParams {
-  nullifiers:     string[];
-  newCommitments: string[];
-  newRoot:        string;
-  deadline:       bigint;
-  nonce:          bigint;
+export interface SpendOnChainParams {
+  token:          string;
+  merkleRoot:     bigint;
+  nullifiers:     [bigint, bigint];
+  newCommitments: [bigint, bigint];
+  publicAmount:   bigint;
+  recipient:      string;
+  proof:          Uint8Array;
 }
 
 export class ChainClient {
-  private readonly pool: ethers.Contract;
+  readonly pool: ethers.Contract;
 
   constructor(
     poolAddress:            string,
@@ -68,11 +59,14 @@ export class ChainClient {
   }
 
   async shield(params: ShieldOnChainParams): Promise<ethers.TransactionReceipt> {
-    const tx = await this.pool.shield({
-      token:      params.token,
-      amount:     params.amount,
-      commitment: params.commitment,
-    });
+    const tx = await this.pool.shield(
+      {
+        token:      params.token,
+        amount:     params.amount,
+        commitment: fieldToBytes32(params.commitment),
+      },
+      ethers.hexlify(params.proof),
+    );
     const receipt = await tx.wait() as ethers.TransactionReceipt;
     if (!receipt || receipt.status !== 1) {
       throw new StealthPayError("shield transaction reverted", "TX_REVERTED");
@@ -80,54 +74,31 @@ export class ChainClient {
     return receipt;
   }
 
-  async unshield(
-    params:       UnshieldOnChainParams,
-    teeSignature: string,
-  ): Promise<ethers.TransactionReceipt> {
-    const tx = await this.pool.unshield(
+  async spend(params: SpendOnChainParams): Promise<ethers.TransactionReceipt> {
+    const tx = await this.pool.spend(
       {
-        token:     params.token,
-        amount:    params.amount,
-        recipient: params.recipient,
-        nullifier: params.nullifier,
-        newRoot:   params.newRoot,
-        deadline:  params.deadline,
-        nonce:     params.nonce,
+        token:          params.token,
+        merkleRoot:     fieldToBytes32(params.merkleRoot),
+        nullifiers:     params.nullifiers.map(fieldToBytes32),
+        newCommitments: params.newCommitments.map(fieldToBytes32),
+        publicAmount:   params.publicAmount,
+        recipient:      params.recipient,
       },
-      teeSignature,
+      ethers.hexlify(params.proof),
     );
     const receipt = await tx.wait() as ethers.TransactionReceipt;
     if (!receipt || receipt.status !== 1) {
-      throw new StealthPayError("unshield transaction reverted", "TX_REVERTED");
-    }
-    return receipt;
-  }
-
-  async privateAction(
-    params:       PrivateActionOnChainParams,
-    teeSignature: string,
-  ): Promise<ethers.TransactionReceipt> {
-    const tx = await this.pool.privateAction(
-      {
-        nullifiers:     params.nullifiers,
-        newCommitments: params.newCommitments,
-        newRoot:        params.newRoot,
-        deadline:       params.deadline,
-        nonce:          params.nonce,
-      },
-      teeSignature,
-    );
-    const receipt = await tx.wait() as ethers.TransactionReceipt;
-    if (!receipt || receipt.status !== 1) {
-      throw new StealthPayError("privateAction transaction reverted", "TX_REVERTED");
+      throw new StealthPayError("spend transaction reverted", "TX_REVERTED");
     }
     return receipt;
   }
 
   async waitForShieldEvent(
-    commitment:  string,
+    commitment:  bigint,
     timeoutMs:   number,
-  ): Promise<{ txHash: string; amount: bigint; token: string }> {
+  ): Promise<{ txHash: string; amount: bigint; token: string; leafIndex: bigint }> {
+    const commitmentHex = fieldToBytes32(commitment);
+
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pool.off("Shielded", handler);
@@ -141,13 +112,13 @@ export class ChainClient {
         _fee:       bigint,
         eventCommitment: string,
         _newRoot:   string,
-        _leafIndex: bigint,
+        leafIndex:  bigint,
         event:      ethers.EventLog,
       ) => {
-        if (eventCommitment.toLowerCase() === commitment.toLowerCase()) {
+        if (eventCommitment.toLowerCase() === commitmentHex.toLowerCase()) {
           clearTimeout(timer);
           this.pool.off("Shielded", handler);
-          resolve({ txHash: event.transactionHash, amount, token });
+          resolve({ txHash: event.transactionHash, amount, token, leafIndex });
         }
       };
 
@@ -155,11 +126,20 @@ export class ChainClient {
     });
   }
 
-  async currentRoot(): Promise<string> {
-    return this.pool.currentRoot() as Promise<string>;
+  async getRoot(): Promise<bigint> {
+    const root = await this.pool.getRoot() as string;
+    return BigInt(root);
   }
 
-  async isNullifierSpent(nullifier: string): Promise<boolean> {
-    return this.pool.isNullifierSpent(nullifier) as Promise<boolean>;
+  async getTreeSize(): Promise<number> {
+    return Number(await this.pool.getTreeSize());
+  }
+
+  async isNullifierSpent(nullifier: bigint): Promise<boolean> {
+    return this.pool.isNullifierSpent(fieldToBytes32(nullifier)) as Promise<boolean>;
+  }
+
+  async isCommitmentKnown(commitment: bigint): Promise<boolean> {
+    return this.pool.isCommitmentKnown(fieldToBytes32(commitment)) as Promise<boolean>;
   }
 }

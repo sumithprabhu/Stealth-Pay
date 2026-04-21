@@ -7,17 +7,27 @@ import { ethers } from "ethers";
 export interface StealthPayConfig {
   /** Ethers signer (connected to 0G Chain) */
   signer: ethers.Signer;
-  /** StealthPay engine URL (e.g. "https://engine.stealthpay.xyz") */
-  engineUrl: string;
-  /** PrivacyPool contract address on 0G Chain */
+  /** PrivacyPool proxy contract address */
   privacyPoolAddress: string;
-  /** API key for engine authentication */
-  apiKey: string;
-  /**
-   * Max ms to wait for shield event confirmation before giving up.
-   * Defaults to 60_000 (1 min).
-   */
-  shieldConfirmTimeoutMs?: number;
+  /** Private spending key (bigint) — kept client-side only */
+  spendingPrivkey: bigint;
+  /** Timeout for waiting on shield/spend confirmation (ms). Defaults to 120_000. */
+  confirmTimeoutMs?: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Note (a shielded UTxO)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface Note {
+  commitment: bigint;
+  token: string;          // ERC-20 address
+  amount: bigint;         // token amount
+  salt: bigint;           // random entropy used when shielding
+  index: number;          // leaf index in the on-chain Merkle tree
+  siblings: bigint[];     // Merkle sibling path (length 20); populated after sync
+  nullifier: bigint;      // pre-computed to detect spent notes
+  spent: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,7 +36,7 @@ export interface StealthPayConfig {
 
 export interface ShieldResult {
   txHash: string;
-  commitment: string;
+  commitment: bigint;
   amount: bigint;
   token: string;
 }
@@ -42,57 +52,14 @@ export interface PrivateSendResult {
   txHash: string;
   amount: bigint;
   token: string;
-  receiverCommitment: string;
-  changeCommitment: string | null;
+  receiverCommitment: bigint;
+  changeCommitment: bigint | null;
 }
 
 export interface PrivateBalanceResult {
-  owner: string;
   token: string;
   balance: bigint;
   noteCount: number;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Engine API response types (internal)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface EngineUnshieldResponse {
-  teeSignature: string;
-  onChainParams: {
-    token:     string;
-    amount:    string;
-    recipient: string;
-    nullifier: string;
-    newRoot:   string;
-    deadline:  string;
-    nonce:     string;
-  };
-}
-
-export interface EnginePrivateTransferResponse {
-  teeSignature: string;
-  onChainParams: {
-    nullifiers:     string[];
-    newCommitments: string[];
-    newRoot:        string;
-    deadline:       string;
-    nonce:          string;
-  };
-  receiverCommitment: string;
-  changeCommitment:   string | null;
-}
-
-export interface EngineBalanceResponse {
-  owner:     string;
-  token:     string;
-  balance:   string;
-  noteCount: number;
-}
-
-export interface EngineShieldResponse {
-  commitment: string;
-  message:    string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
