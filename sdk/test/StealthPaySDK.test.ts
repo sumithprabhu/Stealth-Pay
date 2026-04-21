@@ -122,8 +122,8 @@ describe("StealthPaySDK (V2 — ZK proof flow)", () => {
 
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe("updateNoteSiblings()", () => {
-    it("updates siblings on existing note", async () => {
+  describe("noteManager.trackNote()", () => {
+    it("note is accessible after trackNote with correct siblings length", async () => {
       const { sdk, chain } = makeSdk();
       const commitment = 0x999n;
 
@@ -133,22 +133,15 @@ describe("StealthPaySDK (V2 — ZK proof flow)", () => {
       });
       sandbox.stub(chain, "shield").resolves(fakeReceipt());
       sandbox.stub(chain, "waitForShieldEvent").resolves({
-        txHash: TX_HASH, amount: 1n, token: TOKEN, leafIndex: 3n,
+        txHash: TX_HASH, amount: 1n, token: TOKEN, leafIndex: 0n,
       });
 
       await sdk.shield(TOKEN, 1n);
 
-      const siblings = Array.from({ length: 20 }, (_, i) => BigInt(i + 1));
-      sdk.updateNoteSiblings(commitment, siblings);
-
-      const note = sdk.getNotes(TOKEN)[0];
-      expect(note.siblings[0]).to.equal(1n);
-      expect(note.siblings[19]).to.equal(20n);
-    });
-
-    it("throws StealthPayError for unknown commitment", () => {
-      const { sdk } = makeSdk();
-      expect(() => sdk.updateNoteSiblings(0xdeadn, [])).to.throw(StealthPayError);
+      const notes = sdk.getNotes(TOKEN);
+      expect(notes).to.have.length(1);
+      expect(notes[0].commitment).to.equal(commitment);
+      expect(notes[0].siblings).to.have.length(20);
     });
   });
 
@@ -156,9 +149,7 @@ describe("StealthPaySDK (V2 — ZK proof flow)", () => {
 
   describe("_selectNotes (via unshield error path)", () => {
     it("throws INSUFFICIENT_BALANCE when no notes exist", async () => {
-      const { sdk, chain } = makeSdk();
-      sandbox.stub(chain, "getRoot").resolves(0n);
-
+      const { sdk } = makeSdk();
       try {
         await sdk.unshield(TOKEN, 1_000n, RECIPIENT);
         expect.fail("should have thrown");
