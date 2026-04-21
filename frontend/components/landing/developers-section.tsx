@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
+import { useVisible } from "@/hooks/use-visible";
 
 const features = [
   {
@@ -43,17 +44,7 @@ await sdk.privateSend(USDC, 50_000_000n, receiverPubkey);
 await sdk.unshield(USDC, 50_000_000n, recipient);`;
 
 export function DevelopersSection() {
-  const [isVisible, setIsVisible] = useState(false);
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
-      { threshold: 0.1 }
-    );
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
+  const { ref: sectionRef, isVisible } = useVisible<HTMLElement>();
 
   return (
     <section id="developers" ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden">
@@ -81,7 +72,6 @@ export function DevelopersSection() {
           }`}
         >
           <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-6">
-            <span className="w-8 h-px bg-foreground/30" />
             Developer SDK
           </span>
           <h2 className="text-6xl md:text-7xl lg:text-[128px] font-display tracking-tight leading-[0.9]">

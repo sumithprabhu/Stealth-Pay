@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
+import { useVisible } from "@/hooks/use-visible";
 import { Shield, Lock, Eye, GitBranch } from "lucide-react";
 
 const securityFeatures = [
@@ -33,18 +34,8 @@ const securityFeatures = [
 const properties = ["Soundness", "Completeness", "Zero-knowledge", "Non-interactive"];
 
 export function SecuritySection() {
-  const [isVisible, setIsVisible] = useState(false);
+  const { ref: sectionRef, isVisible } = useVisible<HTMLElement>();
   const [activeFeature, setActiveFeature] = useState(0);
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
-      { threshold: 0.1 }
-    );
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -63,7 +54,6 @@ export function SecuritySection() {
               isVisible ? "opacity-100" : "opacity-0"
             }`}
           >
-            <span className="w-12 h-px bg-foreground/20" />
             Security
           </span>
 
@@ -81,7 +71,7 @@ export function SecuritySection() {
             className={`transition-all duration-1000 delay-100 ${isVisible ? "opacity-100" : "opacity-0"}`}
           >
             <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl">
-              Privacy should be a protocol guarantee, not a policy statement. Every claim StealthPay
+              Privacy should be a protocol guarantee, not a policy statement. Every claim Stealth Pay
               makes is backed by cryptographic proof — verifiable on-chain, forever.
             </p>
           </div>

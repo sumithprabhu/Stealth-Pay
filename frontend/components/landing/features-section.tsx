@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useVisible } from "@/hooks/use-visible";
 
 const features = [
   {
@@ -125,18 +126,8 @@ function ParticleVisualization() {
 }
 
 export function FeaturesSection() {
-  const [isVisible, setIsVisible] = useState(false);
+  const { ref: sectionRef, isVisible } = useVisible<HTMLElement>();
   const [activeFeature, setActiveFeature] = useState(0);
-  const sectionRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
-      { threshold: 0.1 }
-    );
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   return (
     <section id="features" ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden">
@@ -146,7 +137,6 @@ export function FeaturesSection() {
           <div className="grid lg:grid-cols-12 gap-8 items-end">
             <div className="lg:col-span-7">
               <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-6">
-                <span className="w-12 h-px bg-foreground/30" />
                 Protocol
               </span>
               <h2
