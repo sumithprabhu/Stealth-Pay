@@ -1,21 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ArrowRight } from "lucide-react";
+import { useVisible } from "@/hooks/use-visible";
 
 export function CtaSection() {
-  const [isVisible, setIsVisible] = useState(false);
-  const sectionRef = useRef<HTMLDivElement>(null);
+  const { ref: sectionRef, isVisible } = useVisible<HTMLDivElement>();
   const [mousePosition, setMousePosition] = useState({ x: 50, y: 50 });
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
-      { threshold: 0.2 }
-    );
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -47,7 +38,6 @@ export function CtaSection() {
               {/* Left content */}
               <div className="flex-1">
                 <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-8">
-                  <span className="w-8 h-px bg-foreground/30" />
                   Get started
                 </span>
 
