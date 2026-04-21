@@ -54,7 +54,7 @@ export function FooterSection() {
             {/* Brand */}
             <div className="col-span-2">
               <a href="/" className="inline-flex items-center gap-2 mb-6">
-                <span className="text-2xl font-display text-white">StealthPay</span>
+                <span className="text-2xl font-display text-white">Stealth Pay</span>
               </a>
 
               <p className="text-white/50 leading-relaxed mb-8 max-w-xs text-sm">
@@ -106,7 +106,7 @@ export function FooterSection() {
         {/* Bottom bar */}
         <div className="py-8 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-white/30">
-            &copy; 2026 StealthPay. Open source under MIT.
+            &copy; 2026 Stealth Pay. Open source under MIT.
           </p>
           <div className="flex items-center gap-6 text-sm text-white/30">
             <span className="flex items-center gap-2">
