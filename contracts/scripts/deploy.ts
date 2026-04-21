@@ -1,5 +1,5 @@
 /**
- * Deploy AttestationVerifier + PrivacyPool as UUPS proxies.
+ * Deploy ShieldVerifier + SpendVerifier + PrivacyPool (V2 - ZK proofs).
  *
  * Usage:
  *   npx hardhat run scripts/deploy.ts --network zeroGTestnet
@@ -7,10 +7,10 @@
  * Required env vars:
  *   DEPLOYER_PRIVATE_KEY
  *
- * Optional env vars (all fall back to deployer address if unset):
- *   INITIAL_ADMIN        — address granted all admin roles
- *   FEE_RECIPIENT        — address that receives protocol fees
- *   PROTOCOL_FEE_BPS     — fee in basis points (default: 10 = 0.1%)
+ * Optional env vars:
+ *   INITIAL_ADMIN        - address granted all admin roles (default: deployer)
+ *   FEE_RECIPIENT        - address that receives protocol fees (default: deployer)
+ *   PROTOCOL_FEE_BPS     - fee in basis points (default: 10 = 0.1%)
  */
 import { ethers, upgrades, network } from "hardhat";
 import { saveDeployment } from "./utils";
@@ -25,57 +25,69 @@ async function main() {
   const feeRecipient = process.env.FEE_RECIPIENT   || deployerAddr;
   const feeBps       = BigInt(process.env.PROTOCOL_FEE_BPS ?? "10");
 
-  // ── 1. AttestationVerifier ──────────────────────────────────────────────
-  console.log("Deploying AttestationVerifier…");
-  const AVFactory = await ethers.getContractFactory("AttestationVerifier");
-  const av = await upgrades.deployProxy(AVFactory, [admin], {
-    kind:        "uups",
-    initializer: "initialize",
+  // 1. ShieldVerifier (ZKTranscriptLib must be deployed and linked first)
+  console.log("Deploying ShieldVerifier...");
+  const ShieldTranscriptLib = await ethers.getContractFactory("contracts/ShieldVerifier.sol:ZKTranscriptLib");
+  const shieldTranscript = await ShieldTranscriptLib.deploy();
+  await shieldTranscript.waitForDeployment();
+  const ShieldVerifierFactory = await ethers.getContractFactory("ShieldVerifier", {
+    libraries: { ZKTranscriptLib: await shieldTranscript.getAddress() },
   });
-  await av.waitForDeployment();
-  const avProxy = await av.getAddress();
-  const avImpl  = await upgrades.erc1967.getImplementationAddress(avProxy);
-  console.log(`  Proxy:  ${avProxy}`);
-  console.log(`  Impl:   ${avImpl}`);
+  const shieldVerifier = await ShieldVerifierFactory.deploy();
+  await shieldVerifier.waitForDeployment();
+  const shieldVerifierAddr = await shieldVerifier.getAddress();
+  console.log(`  ZKTranscriptLib: ${await shieldTranscript.getAddress()}`);
+  console.log(`  ShieldVerifier:  ${shieldVerifierAddr}`);
 
-  // ── 2. PrivacyPool ──────────────────────────────────────────────────────
-  console.log("\nDeploying PrivacyPool…");
+  // 2. SpendVerifier (same pattern — separate ZKTranscriptLib instance)
+  console.log("\nDeploying SpendVerifier...");
+  const SpendTranscriptLib = await ethers.getContractFactory("contracts/SpendVerifier.sol:ZKTranscriptLib");
+  const spendTranscript = await SpendTranscriptLib.deploy();
+  await spendTranscript.waitForDeployment();
+  const SpendVerifierFactory = await ethers.getContractFactory("SpendVerifier", {
+    libraries: { ZKTranscriptLib: await spendTranscript.getAddress() },
+  });
+  const spendVerifier = await SpendVerifierFactory.deploy();
+  await spendVerifier.waitForDeployment();
+  const spendVerifierAddr = await spendVerifier.getAddress();
+  console.log(`  ZKTranscriptLib: ${await spendTranscript.getAddress()}`);
+  console.log(`  SpendVerifier:   ${spendVerifierAddr}`);
+
+  // 3. PrivacyPool (UUPS proxy)
+  console.log("\nDeploying PrivacyPool...");
   const PoolFactory = await ethers.getContractFactory("PrivacyPool");
   const pool = await upgrades.deployProxy(
     PoolFactory,
-    [admin, avProxy, feeBps, feeRecipient],
-    {
-      kind:        "uups",
-      initializer: "initialize",
-    },
+    [admin, shieldVerifierAddr, spendVerifierAddr, feeBps, feeRecipient],
+    { kind: "uups", initializer: "initialize" },
   );
   await pool.waitForDeployment();
   const poolProxy = await pool.getAddress();
   const poolImpl  = await upgrades.erc1967.getImplementationAddress(poolProxy);
-  console.log(`  Proxy:  ${poolProxy}`);
-  console.log(`  Impl:   ${poolImpl}`);
+  console.log(`  Proxy: ${poolProxy}`);
+  console.log(`  Impl:  ${poolImpl}`);
 
-  // ── 3. Persist addresses ────────────────────────────────────────────────
+  // 4. Save addresses to deployments/<network>.json
   const chainId   = Number((await ethers.provider.getNetwork()).chainId);
   const savedPath = saveDeployment({
-    network:                  network.name,
+    network:          network.name,
     chainId,
-    deployedAt:               new Date().toISOString(),
-    deployer:                 deployerAddr,
-    AttestationVerifierImpl:  avImpl,
-    AttestationVerifierProxy: avProxy,
-    PrivacyPoolImpl:          poolImpl,
-    PrivacyPoolProxy:         poolProxy,
+    deployedAt:       new Date().toISOString(),
+    deployer:         deployerAddr,
+    ShieldVerifier:   shieldVerifierAddr,
+    SpendVerifier:    spendVerifierAddr,
+    PrivacyPoolImpl:  poolImpl,
+    PrivacyPoolProxy: poolProxy,
   });
 
   console.log(`\nDeployment saved to ${savedPath}`);
-  console.log("\n─────────────────────────────────────────");
+  console.log("\n-----------------------------------------");
   console.log("Next steps:");
   console.log("  1. npx hardhat run scripts/setup.ts --network <network>");
-  console.log("     (registers enclave + whitelists tokens)");
-  console.log("  2. npx hardhat verify --network <network> " + avImpl);
-  console.log("  3. npx hardhat verify --network <network> " + poolImpl);
-  console.log("─────────────────────────────────────────\n");
+  console.log("  2. npx hardhat verify --network <network> " + shieldVerifierAddr);
+  console.log("  3. npx hardhat verify --network <network> " + spendVerifierAddr);
+  console.log("  4. npx hardhat verify --network <network> " + poolImpl);
+  console.log("-----------------------------------------\n");
 }
 
 main().catch((err) => {

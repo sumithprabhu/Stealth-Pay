@@ -1,15 +1,13 @@
 /**
- * Combined deploy + setup for local development.
- * Deploys contracts, registers a dev enclave, whitelists tokens — all in one run.
+ * Combined deploy + setup for local development (V2 - ZK proofs).
+ * Deploys all contracts and optionally whitelists tokens in one run.
  *
  * Usage:
- *   npx hardhat node                                   # terminal 1
- *   npx hardhat run scripts/deployAndSetup.ts --network localhost   # terminal 2
+ *   npx hardhat node                                                    # terminal 1
+ *   npx hardhat run scripts/deployAndSetup.ts --network localhost       # terminal 2
  *
- * Optional env vars (same as deploy.ts + setup.ts):
- *   INITIAL_ADMIN, FEE_RECIPIENT, PROTOCOL_FEE_BPS
- *   ENCLAVE_SIGNING_KEY, ENCLAVE_MEASUREMENT_HASH, ENCLAVE_DESCRIPTION
- *   WHITELIST_TOKENS
+ * Optional env vars:
+ *   INITIAL_ADMIN, FEE_RECIPIENT, PROTOCOL_FEE_BPS, WHITELIST_TOKENS
  */
 import { ethers, upgrades, network } from "hardhat";
 import { saveDeployment, optionalEnv } from "./utils";
@@ -25,24 +23,38 @@ async function main() {
   const feeRecipient = optionalEnv("FEE_RECIPIENT",   deployerAddr);
   const feeBps       = BigInt(optionalEnv("PROTOCOL_FEE_BPS", "10"));
 
-  // ── Deploy AttestationVerifier ──────────────────────────────────────────
-  console.log("Deploying AttestationVerifier…");
-  const AVFactory = await ethers.getContractFactory("AttestationVerifier");
-  const av = await upgrades.deployProxy(AVFactory, [admin], {
-    kind: "uups", initializer: "initialize",
+  // 1. ShieldVerifier
+  console.log("Deploying ShieldVerifier...");
+  const ShieldTranscriptLib = await ethers.getContractFactory("contracts/ShieldVerifier.sol:ZKTranscriptLib");
+  const shieldTranscript = await ShieldTranscriptLib.deploy();
+  await shieldTranscript.waitForDeployment();
+  const ShieldVerifierFactory = await ethers.getContractFactory("ShieldVerifier", {
+    libraries: { ZKTranscriptLib: await shieldTranscript.getAddress() },
   });
-  await av.waitForDeployment();
-  const avProxy = await av.getAddress();
-  const avImpl  = await upgrades.erc1967.getImplementationAddress(avProxy);
-  console.log(`  Proxy: ${avProxy}`);
-  console.log(`  Impl:  ${avImpl}`);
+  const shieldVerifier = await ShieldVerifierFactory.deploy();
+  await shieldVerifier.waitForDeployment();
+  const shieldVerifierAddr = await shieldVerifier.getAddress();
+  console.log(`  Address: ${shieldVerifierAddr}`);
 
-  // ── Deploy PrivacyPool ──────────────────────────────────────────────────
-  console.log("\nDeploying PrivacyPool…");
+  // 2. SpendVerifier
+  console.log("\nDeploying SpendVerifier...");
+  const SpendTranscriptLib = await ethers.getContractFactory("contracts/SpendVerifier.sol:ZKTranscriptLib");
+  const spendTranscript = await SpendTranscriptLib.deploy();
+  await spendTranscript.waitForDeployment();
+  const SpendVerifierFactory = await ethers.getContractFactory("SpendVerifier", {
+    libraries: { ZKTranscriptLib: await spendTranscript.getAddress() },
+  });
+  const spendVerifier = await SpendVerifierFactory.deploy();
+  await spendVerifier.waitForDeployment();
+  const spendVerifierAddr = await spendVerifier.getAddress();
+  console.log(`  Address: ${spendVerifierAddr}`);
+
+  // 3. PrivacyPool (UUPS proxy)
+  console.log("\nDeploying PrivacyPool...");
   const PoolFactory = await ethers.getContractFactory("PrivacyPool");
   const pool = await upgrades.deployProxy(
     PoolFactory,
-    [admin, avProxy, feeBps, feeRecipient],
+    [admin, shieldVerifierAddr, spendVerifierAddr, feeBps, feeRecipient],
     { kind: "uups", initializer: "initialize" },
   );
   await pool.waitForDeployment();
@@ -51,57 +63,37 @@ async function main() {
   console.log(`  Proxy: ${poolProxy}`);
   console.log(`  Impl:  ${poolImpl}`);
 
-  // ── Save addresses ──────────────────────────────────────────────────────
+  // 4. Save
   saveDeployment({
-    network:                  network.name,
+    network:          network.name,
     chainId,
-    deployedAt:               new Date().toISOString(),
-    deployer:                 deployerAddr,
-    AttestationVerifierImpl:  avImpl,
-    AttestationVerifierProxy: avProxy,
-    PrivacyPoolImpl:          poolImpl,
-    PrivacyPoolProxy:         poolProxy,
+    deployedAt:       new Date().toISOString(),
+    deployer:         deployerAddr,
+    ShieldVerifier:   shieldVerifierAddr,
+    SpendVerifier:    spendVerifierAddr,
+    PrivacyPoolImpl:  poolImpl,
+    PrivacyPoolProxy: poolProxy,
   });
 
-  // ── Register dev enclave ────────────────────────────────────────────────
-  const enclaveKey = optionalEnv(
-    "ENCLAVE_SIGNING_KEY",
-    ethers.Wallet.createRandom().address, // dev-only random key
-  );
-  const measurementHash = optionalEnv(
-    "ENCLAVE_MEASUREMENT_HASH",
-    ethers.keccak256(ethers.toUtf8Bytes("dev-measurement-v1")),
-  );
-  const description = optionalEnv("ENCLAVE_DESCRIPTION", "StealthPay TEE (dev)");
-
-  console.log("\nRegistering enclave…");
-  const avContract   = await ethers.getContractAt("AttestationVerifier", avProxy, deployer);
-  const poolContract = await ethers.getContractAt("PrivacyPool",         poolProxy, deployer);
-
-  let tx = await avContract.whitelistMeasurement(measurementHash);
-  await tx.wait();
-  tx = await avContract.registerEnclave(enclaveKey, measurementHash, description);
-  await tx.wait();
-  console.log(`  Enclave key:      ${enclaveKey}`);
-  console.log(`  Measurement hash: ${measurementHash}`);
-
-  // ── Whitelist tokens ────────────────────────────────────────────────────
+  // 5. Whitelist tokens (optional)
   const tokensEnv = optionalEnv("WHITELIST_TOKENS");
   if (tokensEnv) {
+    const poolContract = await ethers.getContractAt("PrivacyPool", poolProxy, deployer);
     const tokens = tokensEnv.split(",").map((t) => t.trim()).filter(Boolean);
-    console.log("\nWhitelisting tokens…");
+    console.log("\nWhitelisting tokens...");
     for (const token of tokens) {
-      tx = await poolContract.whitelistToken(token);
+      const tx = await poolContract.whitelistToken(token);
       await tx.wait();
-      console.log(`  ✓ ${token}`);
+      console.log(`  ${token}`);
     }
   }
 
-  console.log("\n════════════════════════════════════════");
+  console.log("\n========================================");
   console.log("Local deployment ready.");
-  console.log(`  AttestationVerifier: ${avProxy}`);
-  console.log(`  PrivacyPool:         ${poolProxy}`);
-  console.log("════════════════════════════════════════\n");
+  console.log(`  ShieldVerifier: ${shieldVerifierAddr}`);
+  console.log(`  SpendVerifier:  ${spendVerifierAddr}`);
+  console.log(`  PrivacyPool:    ${poolProxy}`);
+  console.log("========================================\n");
 }
 
 main().catch((err) => {
