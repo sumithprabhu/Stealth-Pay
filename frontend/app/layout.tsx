@@ -21,7 +21,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'StealthPay — Zero-Knowledge Privacy on 0G Chain',
+  title: 'Stealth Pay — Zero-Knowledge Privacy on 0G Chain',
   description: 'Shield tokens, transact privately, withdraw freely. ZK-proof-backed privacy for ERC-20s on 0G Chain. No trusted parties — just math.',
 }
 
