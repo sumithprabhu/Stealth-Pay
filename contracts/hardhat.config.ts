@@ -39,7 +39,7 @@ const config: HardhatUserConfig = {
     },
     zeroGTestnet: {
       url: process.env.ZERO_G_TESTNET_RPC ?? "https://evmrpc-testnet.0g.ai",
-      chainId: 16600,
+      chainId: 16602,
       accounts: [DEPLOYER_PRIVATE_KEY],
       gasPrice: "auto",
     },
@@ -57,7 +57,7 @@ const config: HardhatUserConfig = {
     customChains: [
       {
         network: "zeroGTestnet",
-        chainId: 16600,
+        chainId: 16602,
         urls: {
           apiURL: "https://chainscan-galileo.0g.ai/api",
           browserURL: "https://chainscan-galileo.0g.ai",
