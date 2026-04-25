@@ -82,6 +82,14 @@ export function Navigation() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
+            <a
+              href="/playground"
+              className={`text-sm transition-colors duration-300 font-mono ${
+                isScrolled ? "text-foreground/60 hover:text-foreground" : "text-white/60 hover:text-white"
+              }`}
+            >
+              Playground
+            </a>
             <Button
               size="sm"
               asChild

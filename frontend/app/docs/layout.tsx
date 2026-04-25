@@ -74,7 +74,7 @@ function Sidebar() {
       >
         {sections.map((group) => (
           <div key={group.group} className="mb-7">
-            <p className="text-[10px] font-mono text-white/25 uppercase tracking-[0.12em] mb-2 px-3">
+            <p className="text-[10px] font-mono text-white/50 uppercase tracking-[0.12em] mb-2 px-3">
               {group.group}
             </p>
             <ul className="space-y-0.5">
@@ -85,7 +85,7 @@ function Sidebar() {
                     className={`block text-sm px-3 py-1.5 transition-colors rounded-sm ${
                       isActive(item.slug)
                         ? "text-[#eca8d6] bg-[#eca8d6]/[0.08]"
-                        : "text-white/38 hover:text-white/65 hover:bg-white/[0.04]"
+                        : "text-white/65 hover:text-white/90 hover:bg-white/[0.05]"
                     }`}
                   >
                     {item.label}
@@ -124,6 +124,12 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
             <span className="text-sm font-mono text-white/35">docs</span>
           </div>
           <div className="flex items-center gap-5">
+            <a
+              href="/playground"
+              className="text-sm text-white/35 hover:text-white/70 transition-colors font-mono"
+            >
+              Playground
+            </a>
             <a
               href="https://github.com"
               className="text-sm text-white/35 hover:text-white/70 transition-colors font-mono"
