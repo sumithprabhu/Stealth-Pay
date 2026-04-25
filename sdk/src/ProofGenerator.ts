@@ -19,7 +19,8 @@ const execFileAsync = promisify(execFile);
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CIRCUITS_DIR = path.resolve(__dirname, "../../circuits");
-const BB_BIN = path.join(os.homedir(), ".bb", "bb");
+const BB_BIN    = path.join(os.homedir(), ".bb", "bb");
+const NARGO_BIN = path.join(os.homedir(), ".nargo", "bin", "nargo");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Input / output types
@@ -87,7 +88,7 @@ function boolArrayStr(arr: boolean[]): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function nargoExecute(packageName: "shield" | "spend"): Promise<void> {
-  await execFileAsync("nargo", ["execute", "-p", packageName], {
+  await execFileAsync(NARGO_BIN, ["execute", "--package", packageName], {
     cwd: CIRCUITS_DIR,
   });
 }
@@ -98,9 +99,10 @@ async function bbProve(
   outDir: string,
 ): Promise<void> {
   const bytecodePath = path.join(CIRCUITS_DIR, "target", `${circuitName}.json`);
+  const vkPath       = path.join(CIRCUITS_DIR, "target", `${circuitName}_vk_evm`, "vk");
   await execFileAsync(
     BB_BIN,
-    ["prove", "-b", bytecodePath, "-w", witnessPath, "-o", outDir, "-t", "evm"],
+    ["prove", "-b", bytecodePath, "-w", witnessPath, "-o", outDir, "-t", "evm", "-k", vkPath],
     { cwd: CIRCUITS_DIR },
   );
 }

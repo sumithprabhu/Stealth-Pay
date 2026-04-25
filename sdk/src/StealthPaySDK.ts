@@ -73,14 +73,9 @@ export class StealthPaySDK {
       salt,
     });
 
-    const receipt = await this.chain.shield({ token, amount, commitment, proof });
+    const { receipt, leafIndex } = await this.chain.shield({ token, amount, commitment, proof });
 
-    const event = await this.chain.waitForShieldEvent(
-      commitment,
-      this.config.confirmTimeoutMs ?? 120_000,
-    );
-
-    this.noteManager.trackNote(commitment, token, amount, salt, Number(event.leafIndex));
+    this.noteManager.trackNote(commitment, token, amount, salt, Number(leafIndex));
 
     return { txHash: receipt.hash, commitment, amount, token };
   }
@@ -119,12 +114,18 @@ export class StealthPaySDK {
       recipient,
     });
 
+    const changeLeafIndex = this.noteManager.getTreeSize(); // change goes in at current size
+
     const receipt = await this.chain.spend({
       token, merkleRoot, nullifiers, newCommitments,
       publicAmount: amount, recipient, proof,
     });
 
     for (const n of inputNotes) n.spent = true;
+
+    if (change > 0n) {
+      this.noteManager.trackNote(newCommitments[0], token, change, changeSalt, changeLeafIndex);
+    }
 
     return { txHash: receipt.hash, amount, token, recipient };
   }
@@ -162,12 +163,18 @@ export class StealthPaySDK {
       recipient:    ethers.ZeroAddress,
     });
 
+    const changeLeafIndex = this.noteManager.getTreeSize() + 1; // receiver at [0], change at [1]
+
     const receipt = await this.chain.spend({
       token, merkleRoot, nullifiers, newCommitments,
       publicAmount: 0n, recipient: ethers.ZeroAddress, proof,
     });
 
     for (const n of inputNotes) n.spent = true;
+
+    if (change > 0n) {
+      this.noteManager.trackNote(newCommitments[1], token, change, changeSalt, changeLeafIndex);
+    }
 
     return {
       txHash:             receipt.hash,

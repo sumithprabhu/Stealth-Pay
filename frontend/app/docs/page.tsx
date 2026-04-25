@@ -8,11 +8,11 @@ export default function DocsIntroPage() {
         <span className="text-xs font-mono text-white/25 uppercase tracking-widest">Overview</span>
       </div>
       <h1 className="text-5xl lg:text-[56px] font-display tracking-tight leading-[0.92] mb-8 text-white">
-        What is Stealth Pay?
+        What is Stealth <span className="text-[#eca8d6]">Pay</span>?
       </h1>
 
       <p className="text-white/55 leading-relaxed mb-4 text-lg">
-        Stealth Pay is a zero-knowledge privacy protocol for ERC-20 tokens on 0G Chain. It lets users
+        Stealth <span className="text-[#eca8d6]">Pay</span> is a zero-knowledge privacy protocol for ERC-20 tokens on 0G Chain. It lets users
         shield tokens into an on-chain pool, transact privately inside it, and withdraw to any address
         — with no observable link between deposit and withdrawal.
       </p>
@@ -40,17 +40,18 @@ export default function DocsIntroPage() {
       </div>
 
       <Callout type="tip">
-        Stealth Pay is deployed on 0G Galileo testnet (chain ID 16602). The proxy address is{" "}
+        Stealth <span className="text-[#eca8d6]">Pay</span> is deployed on 0G Galileo testnet (chain ID 16602). The proxy address is{" "}
         <code className="font-mono text-[#eca8d6]">0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1</code>.
       </Callout>
 
       <h2 className="text-2xl font-display tracking-tight mt-12 mb-5 text-white">Quick start</h2>
       <div className="space-y-3">
         {[
-          { step: "01", label: "Install the SDK", href: "/docs/sdk-install" },
-          { step: "02", label: "Initialize with your signer and spending key", href: "/docs/sdk-init" },
-          { step: "03", label: "Sync the Merkle tree from chain", href: "/docs/sdk-sync" },
-          { step: "04", label: "Shield your first tokens", href: "/docs/sdk-shield" },
+          { step: "01", label: "See use cases & payment patterns", href: "/docs/usecases" },
+          { step: "02", label: "Install the SDK", href: "/docs/sdk-install" },
+          { step: "03", label: "Initialize with your signer and spending key", href: "/docs/sdk-init" },
+          { step: "04", label: "Sync the Merkle tree from chain", href: "/docs/sdk-sync" },
+          { step: "05", label: "Shield your first tokens", href: "/docs/sdk-shield" },
         ].map((s) => (
           <Link
             key={s.step}
@@ -65,7 +66,7 @@ export default function DocsIntroPage() {
       </div>
 
       <div className="mt-14 pt-8 border-t border-white/[0.07] flex items-center justify-between text-xs text-white/20 font-mono">
-        <span>Stealth Pay · 0G Galileo testnet</span>
+        <span>Stealth <span className="text-[#eca8d6]">Pay</span> · 0G Galileo testnet</span>
         <a href="https://github.com" className="hover:text-white/45 transition-colors">Edit on GitHub ↗</a>
       </div>
     </>

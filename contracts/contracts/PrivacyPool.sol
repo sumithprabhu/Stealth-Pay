@@ -59,8 +59,8 @@ contract PrivacyPool is
     uint256 public constant MAX_FEE_BPS = 1000; // 10%
     uint256 public constant TREE_DEPTH  = 20;
 
-    // UltraHonk EVM target adds 8 aggregation-object public inputs before user inputs.
-    uint256 private constant AGG_OBJECT_SIZE = 8;
+    // bb >=5.x embeds pairing points inside the proof bytes; public inputs are circuit-only.
+    uint256 private constant AGG_OBJECT_SIZE = 0;
 
     // -------------------------------------------------------------------------
     // State
@@ -173,9 +173,9 @@ contract PrivacyPool is
         // The prover must prove against the CURRENT on-chain root
         if (params.merkleRoot != _tree.getRoot()) revert PP__InvalidMerkleRoot(params.merkleRoot);
 
-        // Check no nullifier already spent
-        if (_spentNullifiers[params.nullifiers[0]]) revert PP__NullifierAlreadySpent(params.nullifiers[0]);
-        if (_spentNullifiers[params.nullifiers[1]]) revert PP__NullifierAlreadySpent(params.nullifiers[1]);
+        // Check no nullifier already spent (skip zero = disabled slot)
+        if (params.nullifiers[0] != bytes32(0) && _spentNullifiers[params.nullifiers[0]]) revert PP__NullifierAlreadySpent(params.nullifiers[0]);
+        if (params.nullifiers[1] != bytes32(0) && _spentNullifiers[params.nullifiers[1]]) revert PP__NullifierAlreadySpent(params.nullifiers[1]);
 
         // Check no output commitment conflict (only for non-zero commitments)
         if (params.newCommitments[0] != bytes32(0) && _knownCommitments[params.newCommitments[0]])
@@ -197,9 +197,9 @@ contract PrivacyPool is
 
         if (!_spendVerifier.verify(proof, publicInputs)) revert PP__InvalidZKProof();
 
-        // Mark nullifiers spent
-        _spentNullifiers[params.nullifiers[0]] = true;
-        _spentNullifiers[params.nullifiers[1]] = true;
+        // Mark nullifiers spent (skip zero = disabled slot)
+        if (params.nullifiers[0] != bytes32(0)) _spentNullifiers[params.nullifiers[0]] = true;
+        if (params.nullifiers[1] != bytes32(0)) _spentNullifiers[params.nullifiers[1]] = true;
 
         // Insert non-zero output commitments into the Merkle tree
         if (params.newCommitments[0] != bytes32(0)) {

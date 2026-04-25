@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
+import Image from "next/image";
 
 const navLinks = [
   { name: "Features",     href: "#features"     },
@@ -41,12 +42,19 @@ export function Navigation() {
         >
           {/* Logo */}
           <a href="#" className="flex items-center gap-2 group">
+            <Image
+              src="/logo.png"
+              alt="Stealth Pay"
+              width={28}
+              height={28}
+              className={`transition-all duration-500 ${isScrolled ? "w-6 h-6" : "w-7 h-7"}`}
+            />
             <span
               className={`font-display tracking-tight transition-all duration-500 ${
                 isScrolled ? "text-xl text-foreground" : "text-2xl text-white"
               }`}
             >
-              Stealth Pay
+              Stealth <span className="text-[#eca8d6]">Pay</span>
             </span>
           </a>
 

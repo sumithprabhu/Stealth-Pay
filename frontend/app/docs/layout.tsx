@@ -2,12 +2,14 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 
 const sections = [
   {
     group: "Overview",
     items: [
       { slug: "",             label: "What is Stealth Pay?" },
+      { slug: "usecases",     label: "Use Cases" },
       { slug: "architecture", label: "Architecture" },
     ],
   },
@@ -113,9 +115,10 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
           <div className="flex items-center gap-6">
             <Link
               href="/"
-              className="text-base font-display text-white/80 hover:text-white transition-colors"
+              className="flex items-center gap-2 text-base font-display text-white/80 hover:text-white transition-colors"
             >
-              Stealth Pay
+              <Image src="/logo.png" alt="Stealth Pay" width={22} height={22} className="opacity-80 hover:opacity-100 transition-opacity" />
+              Stealth <span className="text-[#eca8d6]">Pay</span>
             </Link>
             <span className="text-white/15">/</span>
             <span className="text-sm font-mono text-white/35">docs</span>

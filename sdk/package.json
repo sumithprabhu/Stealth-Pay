@@ -1,5 +1,5 @@
 {
-  "name": "@stealthpay/sdk",
+  "name": "stealthpay-sdk",
   "version": "1.0.0",
   "description": "StealthPay SDK — private token transfers on 0G Chain",
   "main": "dist/index.js",
@@ -11,7 +11,8 @@
     "build": "tsc",
     "test": "mocha --require ts-node/register --require dotenv/config 'test/**/*.test.ts' --timeout 30000",
     "typecheck": "tsc --noEmit",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "e2e": "ts-node --project tsconfig.scripts.json scripts/e2e.ts"
   },
   "dependencies": {
     "@zkpassport/poseidon2": "^0.6.2",

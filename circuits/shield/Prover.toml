@@ -1,5 +1,5 @@
-amount = 0
-commitment = 0
-salt = 0
-spending_pubkey = 0
-token = 0
+spending_pubkey = "0x20da28b7d4c2e459fb03e6cca488f3a5145f28f1d055892b535267ef72a5335"
+token           = "0xb4fd61544493a27a4793f161d6be153d1a0f6092"
+amount          = "0x5f5e100"
+salt            = "0x13519ba97b2253a642f583eaa064fb4b4a3fe29fb3763156ee99636fe6b19dab"
+commitment      = "0x298e3a81cdffa15ffb2de45c46b92b99f7c3e26a4b5bc0ebcdced1e89b095ee5"

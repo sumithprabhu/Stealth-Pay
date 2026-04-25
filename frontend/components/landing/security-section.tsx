@@ -71,7 +71,8 @@ export function SecuritySection() {
             className={`transition-all duration-1000 delay-100 ${isVisible ? "opacity-100" : "opacity-0"}`}
           >
             <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl">
-              Privacy should be a protocol guarantee, not a policy statement. Every claim Stealth Pay
+              Privacy should be a protocol guarantee, not a policy statement. Every claim Stealth{" "}
+              <span className="text-[#eca8d6]">Pay</span>{" "}
               makes is backed by cryptographic proof — verifiable on-chain, forever.
             </p>
           </div>
