@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: stealthpay-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: DEPLOYER_PRIVATE_KEY
+        sync: false   # set this in Render dashboard — never commit the key
+      - key: PORT
+        value: 4000

@@ -18,9 +18,12 @@ const execFileAsync = promisify(execFile);
 // Paths
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CIRCUITS_DIR = path.resolve(__dirname, "../../circuits");
-const BB_BIN    = path.join(os.homedir(), ".bb", "bb");
-const NARGO_BIN = path.join(os.homedir(), ".nargo", "bin", "nargo");
+const CIRCUITS_DIR = process.env.STEALTH_PAY_CIRCUITS_DIR
+  ?? path.resolve(__dirname, "../../circuits");
+const BB_BIN    = process.env.STEALTH_PAY_BB_BIN
+  ?? path.join(os.homedir(), ".bb", "bb");
+const NARGO_BIN = process.env.STEALTH_PAY_NARGO_BIN
+  ?? path.join(os.homedir(), ".nargo", "bin", "nargo");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Input / output types

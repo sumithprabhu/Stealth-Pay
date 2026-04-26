@@ -51,8 +51,12 @@ const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 // ─────────────────────────────────────────────────────────────────────────────
 // Paths
 // ─────────────────────────────────────────────────────────────────────────────
-const CIRCUITS_DIR = path.resolve(__dirname, "../../circuits");
-const BB_BIN = path.join(os.homedir(), ".bb", "bb");
+const CIRCUITS_DIR = process.env.STEALTH_PAY_CIRCUITS_DIR
+    ?? path.resolve(__dirname, "../../circuits");
+const BB_BIN = process.env.STEALTH_PAY_BB_BIN
+    ?? path.join(os.homedir(), ".bb", "bb");
+const NARGO_BIN = process.env.STEALTH_PAY_NARGO_BIN
+    ?? path.join(os.homedir(), ".nargo", "bin", "nargo");
 // ─────────────────────────────────────────────────────────────────────────────
 // TOML helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,13 +73,14 @@ function boolArrayStr(arr) {
 // CLI wrappers
 // ─────────────────────────────────────────────────────────────────────────────
 async function nargoExecute(packageName) {
-    await execFileAsync("nargo", ["execute", "-p", packageName], {
+    await execFileAsync(NARGO_BIN, ["execute", "--package", packageName], {
         cwd: CIRCUITS_DIR,
     });
 }
 async function bbProve(circuitName, witnessPath, outDir) {
     const bytecodePath = path.join(CIRCUITS_DIR, "target", `${circuitName}.json`);
-    await execFileAsync(BB_BIN, ["prove", "-b", bytecodePath, "-w", witnessPath, "-o", outDir, "-t", "evm"], { cwd: CIRCUITS_DIR });
+    const vkPath = path.join(CIRCUITS_DIR, "target", `${circuitName}_vk_evm`, "vk");
+    await execFileAsync(BB_BIN, ["prove", "-b", bytecodePath, "-w", witnessPath, "-o", outDir, "-t", "evm", "-k", vkPath], { cwd: CIRCUITS_DIR });
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Shield proof

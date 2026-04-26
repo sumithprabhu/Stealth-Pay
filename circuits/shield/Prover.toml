@@ -1,5 +1,5 @@
 spending_pubkey = "0x20da28b7d4c2e459fb03e6cca488f3a5145f28f1d055892b535267ef72a5335"
 token           = "0xb4fd61544493a27a4793f161d6be153d1a0f6092"
 amount          = "0x5f5e100"
-salt            = "0x13519ba97b2253a642f583eaa064fb4b4a3fe29fb3763156ee99636fe6b19dab"
-commitment      = "0x298e3a81cdffa15ffb2de45c46b92b99f7c3e26a4b5bc0ebcdced1e89b095ee5"
+salt            = "0x2b86a9dc07babe432bf31953b79d15b382c6a6d38eb812f67931bdf4530b2b76"
+commitment      = "0x2ed5740d2cc174847ba5892d9aad5a321d95c2698f77a721442441a170f42479"

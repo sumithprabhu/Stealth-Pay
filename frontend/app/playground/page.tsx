@@ -1,175 +1,77 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount } from "wagmi";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-type Op = "shield" | "privateSend" | "unshield";
+const MOCK_TOKEN   = "0xB4fd61544493a27a4793F161d6BE153d1A0f6092";
+const POOL_ADDRESS = "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1";
+const RPC_URL      = "https://evmrpc-testnet.0g.ai";
+const EXPLORER     = "https://chainscan-galileo.0g.ai";
 
-interface ShieldParams  { token: string; amount: string; spendingPrivkey: string; }
-interface SendParams    { token: string; amount: string; spendingPrivkey: string; receiverPubkey: string; }
-interface UnshieldParams { token: string; amount: string; spendingPrivkey: string; recipient: string; }
-
-const DEFAULT_TOKEN    = "0xB4fd61544493a27a4793F161d6BE153d1A0f6092";
-const DEFAULT_POOL     = "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1";
-const DEFAULT_PRIVKEY  = "0xdeadbeefcafebabe12345678abcdef01...";
-const DEFAULT_PUBKEY   = "0x1a2b3c4d5e6f...";
-const DEFAULT_RECIP    = "0xRecipientAddress...";
+type Op         = "shield" | "privateSend" | "unshield";
+type SignerMode = "wallet" | "privkey";
 
 // ─── Code generators ──────────────────────────────────────────────────────────
 
-function shieldCode(p: ShieldParams) {
-  return `import { StealthPaySDK } from "stealthpay-sdk";
-import { ethers } from "ethers";
+const signerSnippet = (mode: SignerMode, pk: string) =>
+  mode === "wallet"
+    ? `const provider = new ethers.BrowserProvider(window.ethereum);\nconst signer   = await provider.getSigner();`
+    : `const provider = new ethers.JsonRpcProvider("${RPC_URL}");\nconst signer   = new ethers.Wallet(\n  "${pk || "YOUR_PRIVATE_KEY"}",\n  provider,\n);`;
 
-const provider = new ethers.JsonRpcProvider("https://evmrpc-testnet.0g.ai");
-const signer   = new ethers.Wallet(
-  "${p.spendingPrivkey || DEFAULT_PRIVKEY}",
-  provider
-);
-
-const sdk = new StealthPaySDK({
-  signer,
-  privacyPoolAddress: "${DEFAULT_POOL}",
-  spendingPrivkey: ${p.spendingPrivkey ? `BigInt("${p.spendingPrivkey}")` : "YOUR_SPENDING_PRIVKEY"},
-});
-
-// Sync Merkle tree before any operation
-await sdk.sync(provider);
-
-// ── Shield ────────────────────────────────────────────────────────────────────
-const result = await sdk.shield(
-  "${p.token || DEFAULT_TOKEN}",   // ERC-20 token address
-  ${p.amount ? `${p.amount}n` : "100_000_000n"}ULL,              // amount in token decimals
-);
-
-console.log("✓ Shielded");
-console.log("  tx hash   :", result.txHash);
-console.log("  commitment:", result.commitment.toString(16));
-console.log("  token     :", result.token);
-console.log("  amount    :", result.amount.toString());
-
-// Store commitment privately — only you can spend this note
-// { commitment: result.commitment, token: result.token, amount: result.amount }`;
+function liveCall(op: Op, p: Params) {
+  const t = p.token || MOCK_TOKEN;
+  const a = p.amount || "100000000";
+  if (op === "shield")
+    return `await sdk.shield(\n  "${t}",\n  ${a}n,\n)`;
+  if (op === "privateSend")
+    return `await sdk.privateSend(\n  "${t}",\n  ${a}n,\n  BigInt("${p.receiverPubkey || "RECEIVER_SPENDING_PUBKEY"}"),\n)`;
+  return `await sdk.unshield(\n  "${t}",\n  ${a}n,\n  "${p.recipient || "RECIPIENT_ADDRESS"}",\n)`;
 }
 
-function sendCode(p: SendParams) {
-  return `import { StealthPaySDK } from "stealthpay-sdk";
-import { ethers } from "ethers";
+function fullCode(op: Op, mode: SignerMode, p: Params) {
+  const t = p.token || MOCK_TOKEN;
+  const a = p.amount || "100000000";
 
-const provider = new ethers.JsonRpcProvider("https://evmrpc-testnet.0g.ai");
-const signer   = new ethers.Wallet(
-  "${p.spendingPrivkey || DEFAULT_PRIVKEY}",
-  provider
-);
+  const opBlock =
+    op === "shield"
+      ? `const result = await sdk.shield(\n  "${t}",\n  ${a}n,\n);\nconsole.log("tx hash   :", result.txHash);\nconsole.log("commitment:", "0x" + result.commitment.toString(16));`
+      : op === "privateSend"
+      ? `const result = await sdk.privateSend(\n  "${t}",\n  ${a}n,\n  BigInt("${p.receiverPubkey || "RECEIVER_SPENDING_PUBKEY"}"),\n);\nconsole.log("tx hash          :", result.txHash);\nconsole.log("receiver commit  :", "0x" + result.receiverCommitment.toString(16));`
+      : `await sdk.sync(provider);\n\nconst result = await sdk.unshield(\n  "${t}",\n  ${a}n,\n  "${p.recipient || "RECIPIENT_ADDRESS"}",\n);\nconsole.log("tx hash  :", result.txHash);\nconsole.log("recipient:", result.recipient);`;
 
-const sdk = new StealthPaySDK({
-  signer,
-  privacyPoolAddress: "${DEFAULT_POOL}",
-  spendingPrivkey: ${p.spendingPrivkey ? `BigInt("${p.spendingPrivkey}")` : "YOUR_SPENDING_PRIVKEY"},
-});
-
-await sdk.sync(provider);
-
-// ── Private Send ──────────────────────────────────────────────────────────────
-const result = await sdk.privateSend(
-  "${p.token || DEFAULT_TOKEN}",        // ERC-20 token address
-  ${p.amount ? `${p.amount}n` : "50_000_000n"},              // amount in token decimals
-  BigInt("${p.receiverPubkey || DEFAULT_PUBKEY}"), // receiver's spending pubkey
-);
-
-console.log("✓ Private send complete");
-console.log("  tx hash          :", result.txHash);
-console.log("  receiver commit  :", result.receiverCommitment.toString(16));
-console.log("  change commit    :", result.changeCommitment?.toString(16) ?? "none");
-
-// Send { amount, salt } to receiver over a secure channel
-// so they can claim their note with sdk.unshield()`;
+  return `import { StealthPaySDK } from "stealthpay-sdk";\nimport { ethers } from "ethers";\n\n// Signer\n${signerSnippet(mode, p.pk)}\n\n// SDK\nconst sdk = new StealthPaySDK({\n  signer,\n  privacyPoolAddress: "${POOL_ADDRESS}",\n  spendingPrivkey: YOUR_SPENDING_PRIVKEY,\n});\nawait sdk.sync(provider);\n\n// ${op === "shield" ? "Shield" : op === "privateSend" ? "Private send" : "Unshield"}\n${opBlock}`;
 }
 
-function unshieldCode(p: UnshieldParams) {
-  return `import { StealthPaySDK } from "stealthpay-sdk";
-import { ethers } from "ethers";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const provider = new ethers.JsonRpcProvider("https://evmrpc-testnet.0g.ai");
-const signer   = new ethers.Wallet(
-  "${p.spendingPrivkey || DEFAULT_PRIVKEY}",
-  provider
-);
-
-const sdk = new StealthPaySDK({
-  signer,
-  privacyPoolAddress: "${DEFAULT_POOL}",
-  spendingPrivkey: ${p.spendingPrivkey ? `BigInt("${p.spendingPrivkey}")` : "YOUR_SPENDING_PRIVKEY"},
-});
-
-// Sync replays all on-chain events — discovers your unspent notes
-await sdk.sync(provider);
-
-const balance = sdk.getPrivateBalance("${p.token || DEFAULT_TOKEN}");
-console.log("Private balance:", balance.balance.toString(), "(" + balance.noteCount + " notes)");
-
-// ── Unshield ──────────────────────────────────────────────────────────────────
-const result = await sdk.unshield(
-  "${p.token || DEFAULT_TOKEN}",    // ERC-20 token address
-  ${p.amount ? `${p.amount}n` : "50_000_000n"},          // amount to withdraw
-  "${p.recipient || DEFAULT_RECIP}", // recipient wallet address
-);
-
-console.log("✓ Unshielded");
-console.log("  tx hash  :", result.txHash);
-console.log("  amount   :", result.amount.toString());
-console.log("  recipient:", result.recipient);
-// Tokens are now in recipient's wallet — no on-chain link to original deposit`;
+interface Params {
+  token: string; amount: string; pk: string;
+  receiverPubkey: string; recipient: string;
 }
 
-// ─── Inline SDK call (right panel, compact) ───────────────────────────────────
-
-function shieldCall(p: ShieldParams) {
-  return `await sdk.shield(
-  "${p.token || DEFAULT_TOKEN}",
-  ${p.amount ? `${p.amount}n` : "100_000_000n"},
-)`;
-}
-
-function sendCall(p: SendParams) {
-  return `await sdk.privateSend(
-  "${p.token || DEFAULT_TOKEN}",
-  ${p.amount ? `${p.amount}n` : "50_000_000n"},
-  BigInt("${p.receiverPubkey || DEFAULT_PUBKEY}"),
-)`;
-}
-
-function unshieldCall(p: UnshieldParams) {
-  return `await sdk.unshield(
-  "${p.token || DEFAULT_TOKEN}",
-  ${p.amount ? `${p.amount}n` : "50_000_000n"},
-  "${p.recipient || DEFAULT_RECIP}",
-)`;
-}
-
-// ─── Return type cards ────────────────────────────────────────────────────────
-
-const RETURN_TYPES: Record<Op, { type: string; fields: [string, string, string][] }> = {
+const RETURNS: Record<Op, { type: string; fields: [string, string, string][] }> = {
   shield: {
     type: "ShieldResult",
     fields: [
-      ["txHash",     "string",  "transaction hash"],
-      ["commitment", "bigint",  "note commitment — store privately"],
-      ["amount",     "bigint",  "shielded amount"],
-      ["token",      "string",  "token address"],
+      ["txHash",     "string", "transaction hash"],
+      ["commitment", "bigint", "your note — store privately"],
+      ["amount",     "bigint", "shielded amount"],
+      ["token",      "string", "token address"],
     ],
   },
   privateSend: {
     type: "PrivateSendResult",
     fields: [
-      ["txHash",            "string",         "transaction hash"],
-      ["receiverCommitment","bigint",          "receiver's note — relay to them"],
-      ["changeCommitment",  "bigint | null",   "your change note"],
-      ["amount",            "bigint",          "sent amount"],
-      ["token",             "string",          "token address"],
+      ["txHash",             "string",       "transaction hash"],
+      ["receiverCommitment", "bigint",        "relay this to receiver"],
+      ["changeCommitment",   "bigint | null", "your change note"],
+      ["amount",             "bigint",        "sent amount"],
+      ["token",              "string",        "token address"],
     ],
   },
   unshield: {
@@ -183,141 +85,286 @@ const RETURN_TYPES: Record<Op, { type: string; fields: [string, string, string][
   },
 };
 
-// ─── Field component ──────────────────────────────────────────────────────────
+const OPS: { id: Op; label: string; badge: string; badgeColor: string; desc: string }[] = [
+  {
+    id: "shield",
+    label: "sdk.shield()",
+    badge: "public → private",
+    badgeColor: "text-emerald-400 border-emerald-400/40",
+    desc: "Deposit ERC-20 tokens into the private pool. Generates a ZK commitment only you can spend.",
+  },
+  {
+    id: "privateSend",
+    label: "sdk.privateSend()",
+    badge: "private → private",
+    badgeColor: "text-[#eca8d6] border-[#eca8d6]/40",
+    desc: "Transfer privately to any spending pubkey. No on-chain link between sender and receiver.",
+  },
+  {
+    id: "unshield",
+    label: "sdk.unshield()",
+    badge: "private → public",
+    badgeColor: "text-sky-400 border-sky-400/40",
+    desc: "Withdraw tokens to any public address. ZK proof nullifies your note — zero double-spend risk.",
+  },
+];
 
-function Field({ label, value, onChange, placeholder, mono = true, hint }: {
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function Field({ label, value, onChange, placeholder, hint }: {
   label: string; value: string; onChange: (v: string) => void;
-  placeholder: string; mono?: boolean; hint?: string;
+  placeholder: string; hint?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs text-white/40 font-mono uppercase tracking-widest">{label}</label>
+      <label className="text-xs text-white/60 font-mono uppercase tracking-widest">{label}</label>
       <input
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`bg-white/[0.04] border border-white/[0.08] px-3 py-2 text-sm text-white/80 placeholder-white/20 outline-none focus:border-[#eca8d6]/40 transition-colors ${mono ? "font-mono" : ""}`}
+        className="bg-white/[0.05] border border-white/25 px-3 py-2 text-sm text-white font-mono placeholder-white/30 outline-none focus:border-[#eca8d6]/70 transition-colors"
       />
-      {hint && <p className="text-xs text-white/25">{hint}</p>}
+      {hint && <p className="text-xs text-white/45">{hint}</p>}
     </div>
   );
 }
 
-// ─── Code block ───────────────────────────────────────────────────────────────
-
-function CodeBlock({ code, label }: { code: string; label?: string }) {
+function CopyButton({ text, label = "copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+      className="text-xs font-mono text-white/45 hover:text-white/80 transition-colors px-2 py-1 border border-white/15 hover:border-white/30"
+    >
+      {copied ? "✓ copied" : label}
+    </button>
+  );
+}
 
-  function copy() {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+// ─── Faucet button ────────────────────────────────────────────────────────────
+
+function FaucetButton({ address }: { address?: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "err">("idle");
+  const [txHash, setTxHash] = useState("");
+
+  async function mint() {
+    if (!address) return;
+    setState("loading");
+    try {
+      const res  = await fetch("/api/faucet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setTxHash(data.txHash);
+      setState("done");
+    } catch { setState("err"); }
+  }
+
+  if (state === "done") return (
+    <div className="border border-emerald-400/30 bg-emerald-400/[0.05] p-3 space-y-1.5">
+      <p className="text-sm text-emerald-400 font-mono">✓ 1 000 USDC sent</p>
+      <a
+        href={`${EXPLORER}/tx/${txHash}`}
+        target="_blank" rel="noopener noreferrer"
+        className="text-xs font-mono text-white/50 hover:text-white/75 transition-colors break-all block"
+      >
+        {txHash} ↗
+      </a>
+    </div>
+  );
+
+  return (
+    <button
+      onClick={mint}
+      disabled={!address || state === "loading"}
+      className="w-full border border-white/25 py-2.5 text-sm font-mono text-white/80 hover:border-[#eca8d6]/60 hover:text-white hover:bg-[#eca8d6]/[0.06] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+    >
+      {state === "loading" ? "Sending…" : state === "err" ? "Failed — retry" : "✦  Get 1 000 test USDC"}
+    </button>
+  );
+}
+
+// ─── Real streaming Run panel ─────────────────────────────────────────────────
+
+type StreamMsg = { step: string; msg?: string; detail?: string; [key: string]: unknown };
+
+function RunPanel({ op, params }: { op: Op; params: Params }) {
+  const [state,  setState]  = useState<"idle" | "running" | "done" | "error">("idle");
+  const [lines,  setLines]  = useState<{ text: string; dim?: boolean; green?: boolean; link?: string }[]>([]);
+  const [result, setResult] = useState<StreamMsg | null>(null);
+
+  function addLine(text: string, opts?: { dim?: boolean; green?: boolean; link?: string }) {
+    setLines(prev => [...prev, { text, ...opts }]);
+  }
+
+  async function run() {
+    setState("running");
+    setLines([]);
+    setResult(null);
+
+    const body = {
+      op,
+      token:  params.token  || MOCK_TOKEN,
+      amount: params.amount || "100000000",
+      receiverPubkey: params.receiverPubkey || undefined,
+      recipient:      params.recipient      || undefined,
+    };
+
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
+
+      const resp = await fetch(`${backendUrl}/execute`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(body),
+      });
+
+      if (!resp.body) throw new Error("No response body");
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let   buf     = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.replace(/^data: /, "").trim();
+          if (!line) continue;
+          let msg: StreamMsg;
+          try { msg = JSON.parse(line); } catch { continue; }
+
+          if (msg.step === "error") {
+            addLine(`✗ ${msg.msg}`, {});
+            setState("error");
+            return;
+          }
+
+          if (msg.step === "done") {
+            setResult(msg);
+            setState("done");
+            return;
+          }
+
+          const text = msg.detail ? `${msg.msg}` : `${msg.msg}`;
+          const dim  = msg.step !== "done";
+          addLine(text, { dim });
+          if (msg.detail) addLine(`  ${msg.detail}`, { dim: true });
+        }
+      }
+    } catch (err: unknown) {
+      addLine(`✗ ${err instanceof Error ? err.message : String(err)}`);
+      setState("error");
+    }
   }
 
   return (
-    <div className="relative group">
-      {label && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.06] bg-white/[0.02]">
-          <span className="text-xs font-mono text-white/30">{label}</span>
-          <button
-            onClick={copy}
-            className="text-xs font-mono text-white/25 hover:text-white/60 transition-colors"
-          >
-            {copied ? "copied ✓" : "copy"}
-          </button>
+    <div className="border border-white/20 mt-6">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/15 bg-white/[0.03]">
+        <div>
+          <span className="text-xs font-mono text-white/65 uppercase tracking-widest">Live execution</span>
+          <span className="ml-3 text-xs text-white/35">real tx on 0G Galileo testnet</span>
+        </div>
+        <button
+          onClick={run}
+          disabled={state === "running"}
+          className={`flex items-center gap-2 px-4 py-1.5 text-sm font-mono border transition-all ${
+            state === "running"
+              ? "border-white/20 text-white/30 cursor-not-allowed"
+              : "border-[#eca8d6]/50 text-[#eca8d6] bg-[#eca8d6]/[0.08] hover:bg-[#eca8d6]/[0.18] hover:border-[#eca8d6]/80"
+          }`}
+        >
+          {state === "running"
+            ? <><span className="animate-pulse">●</span>&nbsp;Running…</>
+            : state === "done" || state === "error"
+            ? "▶  Run again"
+            : "▶  Run"}
+        </button>
+      </div>
+
+      {/* Log stream */}
+      <div className="p-4 min-h-[100px] font-mono text-sm space-y-0.5">
+        {lines.length === 0 && state === "idle" && (
+          <p className="text-white/30 text-xs">Press Run — a real transaction will be submitted on-chain.</p>
+        )}
+        {lines.map((l, i) => (
+          <p key={i} className={`leading-relaxed ${l.dim ? "text-white/45" : "text-white/85"}`}>{l.text}</p>
+        ))}
+        {state === "running" && <span className="inline-block w-1.5 h-4 bg-[#eca8d6]/70 animate-pulse" />}
+      </div>
+
+      {/* Result card */}
+      {result && state === "done" && (
+        <div className="border-t border-white/15 p-4 space-y-3 bg-white/[0.02]">
+          <p className="text-xs font-mono text-emerald-400/80 uppercase tracking-widest">✓ Transaction confirmed</p>
+          <div className="space-y-2 text-xs font-mono">
+            {Object.entries(result)
+              .filter(([k]) => !["step", "op", "explorer"].includes(k))
+              .map(([k, v]) => (
+                <div key={k} className="flex gap-3">
+                  <span className="text-white/40 w-28 shrink-0">{k}</span>
+                  <span className="text-white/85 break-all">{v !== null && v !== undefined ? String(v) : "—"}</span>
+                </div>
+              ))}
+            {typeof result.explorer === "string" && (
+              <div className="flex gap-3">
+                <span className="text-white/40 w-28 shrink-0">explorer</span>
+                <a
+                  href={result.explorer}
+                  target="_blank" rel="noopener noreferrer"
+                  className="text-[#eca8d6]/80 hover:text-[#eca8d6] transition-colors break-all"
+                >
+                  {result.explorer} ↗
+                </a>
+              </div>
+            )}
+          </div>
         </div>
       )}
-      {!label && (
-        <button
-          onClick={copy}
-          className="absolute top-3 right-3 text-xs font-mono text-white/20 hover:text-white/50 transition-colors z-10"
-        >
-          {copied ? "copied ✓" : "copy"}
-        </button>
-      )}
-      <pre className="overflow-x-auto p-4 text-xs font-mono text-white/65 leading-relaxed">
-        <code>{code}</code>
-      </pre>
     </div>
   );
 }
-
-// ─── Op metadata ──────────────────────────────────────────────────────────────
-
-const OPS: { id: Op; label: string; desc: string; badge: string; badgeColor: string }[] = [
-  {
-    id: "shield",
-    label: "shield()",
-    desc: "Deposit ERC-20 tokens into the private pool. Generates a commitment note only you can spend.",
-    badge: "public → private",
-    badgeColor: "text-emerald-400/70 border-emerald-400/20",
-  },
-  {
-    id: "privateSend",
-    label: "privateSend()",
-    desc: "Transfer privately to any spending pubkey. No on-chain link between sender and receiver.",
-    badge: "private → private",
-    badgeColor: "text-[#eca8d6]/70 border-[#eca8d6]/20",
-  },
-  {
-    id: "unshield",
-    label: "unshield()",
-    desc: "Withdraw tokens to any public address. ZK proof nullifies your note — zero double-spend risk.",
-    badge: "private → public",
-    badgeColor: "text-sky-400/70 border-sky-400/20",
-  },
-];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PlaygroundPage() {
-  const [op, setOp] = useState<Op>("shield");
+  const [op,         setOp]         = useState<Op>("shield");
+  const [signerMode, setSignerMode] = useState<SignerMode>("wallet");
+  const [params, setParams]         = useState<Params>({
+    token: MOCK_TOKEN, amount: "", pk: "", receiverPubkey: "", recipient: "",
+  });
 
-  const [shield,   setShield]   = useState<ShieldParams>({ token: "", amount: "", spendingPrivkey: "" });
-  const [send,     setSend]     = useState<SendParams>({ token: "", amount: "", spendingPrivkey: "", receiverPubkey: "" });
-  const [unshield, setUnshield] = useState<UnshieldParams>({ token: "", amount: "", spendingPrivkey: "", recipient: "" });
+  const { address: connectedAddress } = useAccount();
+  const activeAddress = signerMode === "wallet" ? connectedAddress : undefined;
 
-  const activeOp = OPS.find(o => o.id === op)!;
-
-  const callSnippet =
-    op === "shield"      ? shieldCall(shield) :
-    op === "privateSend" ? sendCall(send) :
-                           unshieldCall(unshield);
-
-  const fullCode =
-    op === "shield"      ? shieldCode(shield) :
-    op === "privateSend" ? sendCode(send) :
-                           unshieldCode(unshield);
-
-  const returnType = RETURN_TYPES[op];
+  const set = (k: keyof Params) => (v: string) => setParams(p => ({ ...p, [k]: v }));
+  const activeOp   = OPS.find(o => o.id === op)!;
+  const returnType = RETURNS[op];
 
   return (
     <div className="min-h-screen text-white" style={{ background: "oklch(0.06 0.008 260)" }}>
 
       {/* Nav */}
-      <header
-        className="sticky top-0 z-50 border-b border-white/[0.07] backdrop-blur-md"
-        style={{ background: "oklch(0.06 0.008 260 / 0.95)" }}
-      >
+      <header className="sticky top-0 z-50 border-b border-white/20 backdrop-blur-md"
+        style={{ background: "oklch(0.06 0.008 260 / 0.95)" }}>
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10 h-14 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <Link href="/" className="flex items-center gap-2 text-base font-display text-white/80 hover:text-white transition-colors">
-              <Image src="/logo.png" alt="Stealth Pay" width={22} height={22} className="opacity-80" />
+            <Link href="/" className="flex items-center gap-2 text-base font-display text-white/90 hover:text-white transition-colors">
+              <Image src="/logo.png" alt="" width={22} height={22} />
               Stealth <span className="text-[#eca8d6]">Pay</span>
             </Link>
-            <span className="text-white/15">/</span>
-            <span className="text-sm font-mono text-white/35">playground</span>
+            <span className="text-white/25">/</span>
+            <span className="text-sm font-mono text-white/55">playground</span>
           </div>
           <div className="flex items-center gap-5">
-            <Link href="/docs" className="text-sm text-white/35 hover:text-white/70 transition-colors font-mono">
-              Docs ↗
-            </Link>
-            <a
-              href="https://github.com"
-              className="text-sm text-white/35 hover:text-white/70 transition-colors font-mono"
-            >
-              GitHub ↗
-            </a>
+            <Link href="/docs" className="text-sm text-white/55 hover:text-white/85 transition-colors font-mono">Docs</Link>
+            <a href="https://github.com" className="text-sm text-white/55 hover:text-white/85 transition-colors font-mono">GitHub ↗</a>
           </div>
         </div>
       </header>
@@ -326,166 +373,185 @@ export default function PlaygroundPage() {
 
         {/* Header */}
         <div className="mb-10">
-          <span className="text-xs font-mono text-white/30 uppercase tracking-widest">SDK Playground</span>
-          <h1 className="text-4xl lg:text-5xl font-display tracking-tight leading-tight mt-2 mb-3 text-white">
+          <span className="text-xs font-mono text-white/50 uppercase tracking-widest">SDK Playground</span>
+          <h1 className="text-4xl lg:text-5xl font-display tracking-tight mt-2 mb-3 text-white">
             Try before you build.
           </h1>
-          <p className="text-white/45 max-w-xl">
-            Pick an operation, fill in your parameters, and see the exact SDK call and full
-            integration code update live. Copy and run it in your project.
+          <p className="text-white/65 max-w-xl">
+            Pick an operation and signer mode. Fill in parameters — the live call and full
+            integration code update instantly. Copy and run in your project.
           </p>
         </div>
 
         {/* Op tabs */}
-        <div className="flex gap-3 mb-8 flex-wrap">
+        <div className="flex gap-3 mb-6 flex-wrap">
           {OPS.map(o => (
-            <button
-              key={o.id}
-              onClick={() => setOp(o.id)}
-              className={`flex items-center gap-3 px-5 py-3 border text-sm transition-all ${
+            <button key={o.id} onClick={() => setOp(o.id)}
+              className={`flex items-center gap-3 px-5 py-3 border text-sm font-mono transition-all ${
                 op === o.id
-                  ? "border-[#eca8d6]/40 bg-[#eca8d6]/[0.06] text-white"
-                  : "border-white/[0.08] text-white/45 hover:border-white/20 hover:text-white/70"
+                  ? "border-[#eca8d6]/60 bg-[#eca8d6]/[0.08] text-white"
+                  : "border-white/25 text-white/65 hover:border-white/45 hover:text-white/90"
               }`}
             >
-              <span className="font-mono">{o.label}</span>
-              <span className={`text-xs border px-2 py-0.5 rounded-full font-mono ${op === o.id ? o.badgeColor : "text-white/20 border-white/10"}`}>
+              {o.label}
+              <span className={`text-xs border px-2 py-0.5 ${op === o.id ? o.badgeColor : "text-white/35 border-white/20"}`}>
                 {o.badge}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Op description */}
-        <p className="text-white/50 mb-8 text-sm max-w-xl">{activeOp.desc}</p>
+        <p className="text-white/60 mb-8 text-sm">{activeOp.desc}</p>
 
-        {/* Main grid: form | live call | return type */}
-        <div className="grid lg:grid-cols-12 gap-6 mb-6">
+        {/* Main 3-col grid */}
+        <div className="grid lg:grid-cols-12 gap-5 mb-5">
 
-          {/* Left — form */}
-          <div className="lg:col-span-4 space-y-5">
-            <div className="border border-white/[0.08] p-5 space-y-5">
-              <p className="text-xs font-mono text-white/30 uppercase tracking-widest">Parameters</p>
+          {/* Left: controls */}
+          <div className="lg:col-span-4 space-y-4">
 
-              <Field
-                label="Token address"
-                value={op === "shield" ? shield.token : op === "privateSend" ? send.token : unshield.token}
-                onChange={v => {
-                  if (op === "shield")      setShield(p => ({ ...p, token: v }));
-                  if (op === "privateSend") setSend(p => ({ ...p, token: v }));
-                  if (op === "unshield")    setUnshield(p => ({ ...p, token: v }));
-                }}
-                placeholder={DEFAULT_TOKEN}
-                hint="ERC-20 contract address on 0G Chain"
-              />
+            {/* Signer mode */}
+            <div className="border border-white/20 p-4 space-y-4">
+              <p className="text-xs font-mono text-white/65 uppercase tracking-widest">Signer mode</p>
+              <div className="flex gap-2">
+                {(["wallet", "privkey"] as SignerMode[]).map(m => (
+                  <button key={m} onClick={() => setSignerMode(m)}
+                    className={`flex-1 py-2 text-sm font-mono border transition-all ${
+                      signerMode === m
+                        ? "border-[#eca8d6]/60 bg-[#eca8d6]/[0.08] text-white"
+                        : "border-white/20 text-white/55 hover:text-white/80 hover:border-white/35"
+                    }`}
+                  >
+                    {m === "wallet" ? "🦊  Wallet" : "🔑  Private key"}
+                  </button>
+                ))}
+              </div>
 
-              <Field
-                label="Amount (raw units)"
-                value={op === "shield" ? shield.amount : op === "privateSend" ? send.amount : unshield.amount}
-                onChange={v => {
-                  if (op === "shield")      setShield(p => ({ ...p, amount: v }));
-                  if (op === "privateSend") setSend(p => ({ ...p, amount: v }));
-                  if (op === "unshield")    setUnshield(p => ({ ...p, amount: v }));
-                }}
-                placeholder="100000000"
-                hint="6 decimals → 100000000 = 100 USDC"
-              />
+              {signerMode === "wallet" ? (
+                <div className="space-y-3">
+                  <ConnectButton chainStatus="icon" showBalance={false} />
+                  {connectedAddress && (
+                    <p className="text-xs font-mono text-white/55 break-all">
+                      <span className="text-white/35">connected: </span>{connectedAddress}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <Field label="Private key" value={params.pk} onChange={set("pk")}
+                  placeholder="0xdeadbeef..." hint="Signs transactions locally — not sent anywhere" />
+              )}
+            </div>
 
-              <Field
-                label="Spending private key"
-                value={op === "shield" ? shield.spendingPrivkey : op === "privateSend" ? send.spendingPrivkey : unshield.spendingPrivkey}
-                onChange={v => {
-                  if (op === "shield")      setShield(p => ({ ...p, spendingPrivkey: v }));
-                  if (op === "privateSend") setSend(p => ({ ...p, spendingPrivkey: v }));
-                  if (op === "unshield")    setUnshield(p => ({ ...p, spendingPrivkey: v }));
-                }}
-                placeholder="0xdeadbeef..."
-                hint="Never leaves your client — used only to generate ZK proof"
-              />
+            {/* Params */}
+            <div className="border border-white/20 p-4 space-y-4">
+              <p className="text-xs font-mono text-white/65 uppercase tracking-widest">Parameters</p>
+
+              <Field label="Token address" value={params.token} onChange={set("token")}
+                placeholder={MOCK_TOKEN} hint="Pre-filled: testnet MockUSDC" />
+              <Field label="Amount (raw units)" value={params.amount} onChange={set("amount")}
+                placeholder="100000000" hint="6 decimals — 100000000 = 100 USDC" />
 
               {op === "privateSend" && (
-                <Field
-                  label="Receiver spending pubkey"
-                  value={send.receiverPubkey}
-                  onChange={v => setSend(p => ({ ...p, receiverPubkey: v }))}
-                  placeholder="0x1a2b3c..."
-                  hint="Derive with deriveSpendingPubkey(privkey)"
-                />
+                <Field label="Receiver spending pubkey" value={params.receiverPubkey}
+                  onChange={set("receiverPubkey")} placeholder="0x1a2b3c..."
+                  hint="deriveSpendingPubkey(privkey)" />
               )}
-
               {op === "unshield" && (
-                <Field
-                  label="Recipient address"
-                  value={unshield.recipient}
-                  onChange={v => setUnshield(p => ({ ...p, recipient: v }))}
-                  placeholder="0xRecipient..."
-                  hint="Public wallet that receives the tokens"
-                />
+                <Field label="Recipient address" value={params.recipient}
+                  onChange={set("recipient")} placeholder="0xRecipient..."
+                  hint="Public wallet that receives the tokens" />
               )}
             </div>
 
-            {/* Install callout */}
-            <div className="border border-white/[0.06] p-4 bg-white/[0.02]">
-              <p className="text-xs font-mono text-white/30 mb-2">install</p>
-              <code className="text-sm font-mono text-[#eca8d6]/80">npm install stealthpay-sdk</code>
+            {/* Faucet */}
+            <div className="border border-white/20 p-4 space-y-3">
+              <div>
+                <p className="text-xs font-mono text-white/65 uppercase tracking-widest mb-1">Test tokens</p>
+                <p className="text-xs text-white/45">
+                  {signerMode === "wallet" && !connectedAddress
+                    ? "Connect your wallet to receive test USDC"
+                    : "Drops 1 000 testnet USDC to your address"}
+                </p>
+              </div>
+              <FaucetButton address={activeAddress} />
+              <p className="text-xs font-mono text-white/40 break-all">
+                <span className="text-white/30">token: </span>{MOCK_TOKEN}
+              </p>
+            </div>
+
+            {/* Install */}
+            <div className="border border-white/20 p-4 bg-white/[0.02]">
+              <p className="text-xs font-mono text-white/55 mb-2">install</p>
+              <code className="text-sm font-mono text-[#eca8d6]">npm install stealthpay-sdk</code>
             </div>
           </div>
 
-          {/* Middle — live SDK call */}
-          <div className="lg:col-span-4">
-            <div className="border border-[#eca8d6]/20 bg-[#eca8d6]/[0.02] h-full">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[#eca8d6]/10">
-                <span className="text-xs font-mono text-[#eca8d6]/60 uppercase tracking-widest">Live SDK call</span>
-                <span className="text-xs font-mono text-white/20">updates as you type</span>
+          {/* Middle: live call */}
+          <div className="lg:col-span-4 flex flex-col">
+            <div className="border border-[#eca8d6]/40 bg-[#eca8d6]/[0.03] flex flex-col flex-1">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#eca8d6]/25">
+                <span className="text-xs font-mono text-[#eca8d6]/70 uppercase tracking-widest">Live SDK call</span>
+                <CopyButton text={liveCall(op, params)} />
               </div>
-              <div className="p-4">
-                <pre className="text-sm font-mono text-white/80 leading-relaxed whitespace-pre-wrap break-all">
-                  <code>{callSnippet}</code>
+              <div className="p-5 flex-1">
+                <pre className="text-sm font-mono text-white leading-relaxed whitespace-pre-wrap break-all">
+                  {liveCall(op, params)}
                 </pre>
               </div>
+              <div className="px-4 py-2 border-t border-[#eca8d6]/15">
+                <p className="text-xs text-white/40">Updates as you type</p>
+              </div>
             </div>
+
+            {/* Run panel lives under the live call on medium screens */}
+            <RunPanel op={op} params={params} />
           </div>
 
-          {/* Right — return type */}
+          {/* Right: return type */}
           <div className="lg:col-span-4">
-            <div className="border border-white/[0.08] h-full">
-              <div className="px-4 py-3 border-b border-white/[0.06] bg-white/[0.02]">
-                <span className="text-xs font-mono text-white/30 uppercase tracking-widest">Returns </span>
-                <span className="text-xs font-mono text-[#eca8d6]/60">{returnType.type}</span>
+            <div className="border border-white/20 h-full">
+              <div className="px-4 py-3 border-b border-white/15 bg-white/[0.03] flex items-center gap-3">
+                <span className="text-xs font-mono text-white/60 uppercase tracking-widest">Returns</span>
+                <span className="text-xs font-mono text-[#eca8d6]/80 border border-[#eca8d6]/30 px-2 py-0.5">{returnType.type}</span>
               </div>
-              <div className="p-4 space-y-3">
+              <div className="p-4 space-y-5">
                 {returnType.fields.map(([name, type, desc]) => (
-                  <div key={name} className="flex flex-col gap-0.5">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-mono text-white/75">{name}</span>
-                      <span className="text-xs font-mono text-[#eca8d6]/50">{type}</span>
+                  <div key={name} className="border-l-2 border-white/15 pl-3">
+                    <div className="flex items-baseline gap-2 mb-0.5">
+                      <span className="text-sm font-mono text-white">{name}</span>
+                      <span className="text-xs font-mono text-[#eca8d6]/65">{type}</span>
                     </div>
-                    <span className="text-xs text-white/30">{desc}</span>
+                    <span className="text-xs text-white/50">{desc}</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-
         </div>
 
         {/* Full code */}
-        <div className="border border-white/[0.08]">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
-            <span className="text-xs font-mono text-white/35 uppercase tracking-widest">Full integration code</span>
-            <span className="text-xs font-mono text-white/20">copy → paste → run</span>
+        <div className="border border-white/20">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-white/15 bg-white/[0.03]">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono text-white/65 uppercase tracking-widest">Full integration code</span>
+              <span className="text-xs font-mono text-white/40 border border-white/20 px-2 py-0.5">
+                {signerMode === "wallet" ? "browser wallet" : "private key"}
+              </span>
+            </div>
+            <CopyButton text={fullCode(op, signerMode, params)} label="copy all" />
           </div>
-          <CodeBlock code={fullCode} />
+          <pre className="overflow-x-auto p-5 text-xs font-mono text-white/80 leading-relaxed">
+            <code>{fullCode(op, signerMode, params)}</code>
+          </pre>
         </div>
 
-        {/* Footer links */}
-        <div className="mt-10 pt-6 border-t border-white/[0.06] flex flex-wrap gap-6 text-xs font-mono text-white/25">
-          <Link href="/docs/sdk-install"  className="hover:text-white/50 transition-colors">Installation →</Link>
-          <Link href="/docs/sdk-init"     className="hover:text-white/50 transition-colors">Initialization →</Link>
-          <Link href="/docs/usecases"     className="hover:text-white/50 transition-colors">Use Cases →</Link>
-          <Link href="/docs/sdk-shield"   className="hover:text-white/50 transition-colors">sdk.shield() →</Link>
-          <Link href="/docs/sdk-send"     className="hover:text-white/50 transition-colors">sdk.privateSend() →</Link>
-          <Link href="/docs/sdk-unshield" className="hover:text-white/50 transition-colors">sdk.unshield() →</Link>
+        {/* Footer */}
+        <div className="mt-10 pt-6 border-t border-white/15 flex flex-wrap gap-6 text-xs font-mono text-white/45">
+          <Link href="/docs/sdk-install"  className="hover:text-white/75 transition-colors">Installation →</Link>
+          <Link href="/docs/sdk-init"     className="hover:text-white/75 transition-colors">Initialization →</Link>
+          <Link href="/docs/usecases"     className="hover:text-white/75 transition-colors">Use Cases →</Link>
+          <Link href="/docs/sdk-shield"   className="hover:text-white/75 transition-colors">sdk.shield() →</Link>
+          <Link href="/docs/sdk-send"     className="hover:text-white/75 transition-colors">sdk.privateSend() →</Link>
+          <Link href="/docs/sdk-unshield" className="hover:text-white/75 transition-colors">sdk.unshield() →</Link>
         </div>
       </div>
     </div>

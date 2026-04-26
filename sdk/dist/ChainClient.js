@@ -44,7 +44,20 @@ class ChainClient {
         if (!receipt || receipt.status !== 1) {
             throw new types_1.StealthPayError("shield transaction reverted", "TX_REVERTED");
         }
-        return receipt;
+        // Parse leafIndex from the Shielded event in the receipt logs
+        const iface = this.pool.interface;
+        let leafIndex = 0n;
+        for (const log of receipt.logs) {
+            try {
+                const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+                if (parsed?.name === "Shielded") {
+                    leafIndex = BigInt(parsed.args.leafIndex);
+                    break;
+                }
+            }
+            catch { /* non-matching log */ }
+        }
+        return { receipt, leafIndex };
     }
     async spend(params) {
         const tx = await this.pool.spend({

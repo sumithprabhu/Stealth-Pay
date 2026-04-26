@@ -19,7 +19,10 @@ export declare class ChainClient {
     readonly pool: ethers.Contract;
     constructor(poolAddress: string, signer: ethers.Signer);
     approveIfNeeded(token: string, amount: bigint): Promise<void>;
-    shield(params: ShieldOnChainParams): Promise<ethers.TransactionReceipt>;
+    shield(params: ShieldOnChainParams): Promise<{
+        receipt: ethers.TransactionReceipt;
+        leafIndex: bigint;
+    }>;
     spend(params: SpendOnChainParams): Promise<ethers.TransactionReceipt>;
     waitForShieldEvent(commitment: bigint, timeoutMs: number): Promise<{
         txHash: string;
