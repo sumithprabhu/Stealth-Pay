@@ -54,6 +54,8 @@ export declare class NoteManager {
     getCurrentRoot(): bigint;
     getSiblings(leafIndex: number): bigint[];
     getTreeSize(): number;
+    /** Find the leaf index of a commitment in the local tree, if present. */
+    findLeafIndex(commitment: bigint): number | undefined;
     private _insertLeaf;
     private _refreshOwnedSiblings;
 }

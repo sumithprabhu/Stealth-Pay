@@ -29,3 +29,16 @@ export type {
   PrivateBalanceResult,
 } from "./types";
 export { StealthPayError } from "./types";
+export {
+  deriveEncryptionKeypair,
+  receiverPubkeyHash,
+  encryptHint,
+  decryptHint,
+  uploadToStorage,
+  downloadFromStorage,
+  postHint,
+  scanHints,
+  ZG_INDEXER_RPC,
+  ZG_RPC,
+} from "./HintStore";
+export type { HintPayload } from "./HintStore";

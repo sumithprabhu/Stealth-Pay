@@ -7,6 +7,7 @@ const ChainClient_1 = require("./ChainClient");
 const NoteManager_1 = require("./NoteManager");
 const ProofGenerator_1 = require("./ProofGenerator");
 const poseidon2_1 = require("./poseidon2");
+const HintStore_1 = require("./HintStore");
 function randomField() {
     const bytes = ethers_1.ethers.randomBytes(32);
     return BigInt(ethers_1.ethers.hexlify(bytes)) % poseidon2_1.BN254_PRIME;
@@ -27,6 +28,29 @@ class StealthPaySDK {
     async sync(provider, fromBlock = 0) {
         await this.noteManager.syncFromChain(provider, this.config.privacyPoolAddress, fromBlock);
         this.stopListening = this.noteManager.startListening();
+        // Auto-discover notes sent to us via 0G Storage hints
+        if (this.config.zeroGStorage) {
+            const hints = await (0, HintStore_1.scanHints)({
+                provider,
+                poolAddress: this.config.privacyPoolAddress,
+                spendingPrivkey: this.config.spendingPrivkey,
+                fromBlock,
+                indexerRpc: this.config.zeroGStorage.indexerRpc,
+            });
+            for (const h of hints) {
+                const commitment = BigInt(h.commitment);
+                // Skip if already tracked
+                if (this.noteManager.getNote(commitment))
+                    continue;
+                const amount = BigInt(h.amount);
+                const salt = BigInt(h.salt);
+                // Find leaf index from the local tree (commitment was inserted via spend)
+                const leafIndex = this.noteManager.findLeafIndex(commitment);
+                if (leafIndex !== undefined) {
+                    this.noteManager.trackNote(commitment, h.token, amount, salt, leafIndex);
+                }
+            }
+        }
     }
     /** Stop live event subscription. */
     disconnect() {
@@ -122,6 +146,28 @@ class StealthPaySDK {
             n.spent = true;
         if (change > 0n) {
             this.noteManager.trackNote(newCommitments[1], token, change, changeSalt, changeLeafIndex);
+        }
+        // Post encrypted hint to 0G Storage so receiver can auto-discover their note
+        if (this.config.zeroGStorage) {
+            try {
+                const { pubkey: receiverEncPubkey } = (0, HintStore_1.deriveEncryptionKeypair)(receiverPubkey);
+                await (0, HintStore_1.postHint)({
+                    signer: await this.chain.pool.runner,
+                    poolContract: this.chain.pool,
+                    receiverEncPubkey,
+                    payload: {
+                        commitment: "0x" + newCommitments[0].toString(16).padStart(64, "0"),
+                        token,
+                        amount: amount.toString(),
+                        salt: receiverSalt.toString(),
+                    },
+                    indexerRpc: this.config.zeroGStorage.indexerRpc,
+                    rpc: this.config.zeroGStorage.rpc,
+                });
+            }
+            catch {
+                // Hint posting is best-effort — don't fail the send if storage is unavailable
+            }
         }
         return {
             txHash: receipt.hash,

@@ -234,6 +234,21 @@ contract PrivacyPool is
     }
 
     // -------------------------------------------------------------------------
+    // 0G Storage hint registry
+    // -------------------------------------------------------------------------
+
+    /// @notice Emitted when a sender posts a note hint on 0G Storage.
+    /// @param receiverPubkeyHash keccak256 of the receiver's encryption pubkey
+    /// @param storageRoot        0G Storage root hash of the encrypted hint blob
+    event NoteHint(bytes32 indexed receiverPubkeyHash, bytes32 storageRoot);
+
+    /// @notice Record that an encrypted note hint was uploaded to 0G Storage.
+    ///         Permissionless — the hint is encrypted so recording it is safe.
+    function recordHint(bytes32 receiverPubkeyHash, bytes32 storageRoot) external {
+        emit NoteHint(receiverPubkeyHash, storageRoot);
+    }
+
+    // -------------------------------------------------------------------------
     // Admin
     // -------------------------------------------------------------------------
 

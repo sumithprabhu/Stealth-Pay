@@ -15,8 +15,10 @@ const POOL_ABI = [
   "function isNullifierSpent(bytes32 nullifier) view returns (bool)",
   "function isCommitmentKnown(bytes32 commitment) view returns (bool)",
   "function isTokenWhitelisted(address token) view returns (bool)",
+  "function recordHint(bytes32 receiverPubkeyHash, bytes32 storageRoot) external",
   "event Shielded(address indexed token, address indexed depositor, uint256 netAmount, uint256 fee, bytes32 indexed commitment, bytes32 newRoot, uint256 leafIndex)",
   "event Spent(address indexed token, bytes32[2] nullifiers, bytes32[2] newCommitments, uint256 publicAmount, address indexed recipient, bytes32 newRoot)",
+  "event NoteHint(bytes32 indexed receiverPubkeyHash, bytes32 storageRoot)",
 ];
 
 export interface ShieldOnChainParams {

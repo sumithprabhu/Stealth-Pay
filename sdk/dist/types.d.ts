@@ -8,6 +8,16 @@ export interface StealthPayConfig {
     spendingPrivkey: bigint;
     /** Timeout for waiting on shield/spend confirmation (ms). Defaults to 120_000. */
     confirmTimeoutMs?: number;
+    /**
+     * 0G Storage config — enables automatic hint posting on privateSend()
+     * and hint scanning on sync(). Optional: if omitted hints are not posted.
+     */
+    zeroGStorage?: {
+        /** 0G Storage indexer RPC URL. Defaults to standard testnet indexer. */
+        indexerRpc?: string;
+        /** 0G Chain RPC used by the storage indexer. Defaults to testnet. */
+        rpc?: string;
+    };
 }
 export interface Note {
     commitment: bigint;

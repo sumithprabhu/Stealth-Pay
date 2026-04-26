@@ -18,6 +18,11 @@ import {
   OutputNote,
 } from "./ProofGenerator";
 import { BN254_PRIME } from "./poseidon2";
+import {
+  deriveEncryptionKeypair,
+  postHint,
+  scanHints,
+} from "./HintStore";
 
 function randomField(): bigint {
   const bytes = ethers.randomBytes(32);
@@ -47,6 +52,30 @@ export class StealthPaySDK {
   async sync(provider: ethers.Provider, fromBlock = 0): Promise<void> {
     await this.noteManager.syncFromChain(provider, this.config.privacyPoolAddress, fromBlock);
     this.stopListening = this.noteManager.startListening();
+
+    // Auto-discover notes sent to us via 0G Storage hints
+    if (this.config.zeroGStorage) {
+      const hints = await scanHints({
+        provider,
+        poolAddress:     this.config.privacyPoolAddress,
+        spendingPrivkey: this.config.spendingPrivkey,
+        fromBlock,
+        indexerRpc:      this.config.zeroGStorage.indexerRpc,
+      });
+
+      for (const h of hints) {
+        const commitment = BigInt(h.commitment);
+        // Skip if already tracked
+        if (this.noteManager.getNote(commitment)) continue;
+        const amount = BigInt(h.amount);
+        const salt   = BigInt(h.salt);
+        // Find leaf index from the local tree (commitment was inserted via spend)
+        const leafIndex = this.noteManager.findLeafIndex(commitment);
+        if (leafIndex !== undefined) {
+          this.noteManager.trackNote(commitment, h.token, amount, salt, leafIndex);
+        }
+      }
+    }
   }
 
   /** Stop live event subscription. */
@@ -174,6 +203,28 @@ export class StealthPaySDK {
 
     if (change > 0n) {
       this.noteManager.trackNote(newCommitments[1], token, change, changeSalt, changeLeafIndex);
+    }
+
+    // Post encrypted hint to 0G Storage so receiver can auto-discover their note
+    if (this.config.zeroGStorage) {
+      try {
+        const { pubkey: receiverEncPubkey } = deriveEncryptionKeypair(receiverPubkey);
+        await postHint({
+          signer:            await this.chain.pool.runner as ethers.Signer,
+          poolContract:      this.chain.pool,
+          receiverEncPubkey,
+          payload: {
+            commitment: "0x" + newCommitments[0].toString(16).padStart(64, "0"),
+            token,
+            amount:     amount.toString(),
+            salt:       receiverSalt.toString(),
+          },
+          indexerRpc: this.config.zeroGStorage.indexerRpc,
+          rpc:        this.config.zeroGStorage.rpc,
+        });
+      } catch {
+        // Hint posting is best-effort — don't fail the send if storage is unavailable
+      }
     }
 
     return {

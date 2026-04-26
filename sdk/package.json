@@ -1,6 +1,6 @@
 {
   "name": "stealthpay-sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "StealthPay SDK — private token transfers on 0G Chain",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,6 +15,7 @@
     "e2e": "ts-node --project tsconfig.scripts.json scripts/e2e.ts"
   },
   "dependencies": {
+    "@0glabs/0g-ts-sdk": "^0.3.3",
     "@zkpassport/poseidon2": "^0.6.2",
     "ethers": "^6.0.0"
   },

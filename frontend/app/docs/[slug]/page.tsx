@@ -8,7 +8,7 @@ import {
 const deployments = [
   { name: "ShieldVerifier",   address: "0x89CD2172470C1aC071117Fe2085780DAA6e9656a" },
   { name: "SpendVerifier",    address: "0xe1E73e47CcbDB78f70A84E8757B51807E1D42386" },
-  { name: "PrivacyPoolImpl",  address: "0x39A300779FdB4D021Df02a112C4289565362610a" },
+  { name: "PrivacyPoolImpl",  address: "0x0c7aEF68936Da0c59c085d1F685dBBBf2509D9Db" },
   { name: "PrivacyPoolProxy", address: "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1" },
 ];
 
@@ -84,7 +84,7 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
             <tbody>
               {[
                 ["shield(token, amount)", "Sender (A)", "Commitment inserted into Merkle tree. Tokens locked in pool.", "amount, salt, spending pubkey"],
-                ["privateSend(token, amount, B_pubkey)", "Sender (A)", "A's note nullified. New commitment for B inserted.", "amount, salt — A must relay these to B"],
+                ["privateSend(token, amount, B_pubkey)", "Sender (A)", "A's note nullified. New commitment for B inserted.", "Auto-posted to 0G Storage if zeroGStorage configured"],
                 ["unshield(token, amount, recipient)", "Note owner", "Nullifier published. Tokens released to recipient.", "Nothing — this is the exit"],
               ].map(([p, w, on, off]) => (
                 <tr key={p} className="border-b border-white/[0.05] last:border-0 align-top">
@@ -544,9 +544,15 @@ const sdk = new StealthPaySDK({
   signer,
   privacyPoolAddress: "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1",
   spendingPrivkey: mySpendingPrivkey, // bigint — kept locally
+
+  // Optional: enable 0G Storage hint layer so privateSend() auto-posts
+  // encrypted notes and sync() auto-discovers received notes.
+  zeroGStorage: {
+    indexerRpc: "https://indexer-storage-testnet-standard.0g.ai",
+  },
 });
 
-// Sync Merkle tree and start listening for new events
+// Sync Merkle tree + scan 0G Storage for received note hints
 await sdk.sync(provider);`}</Code>
         <H3>Constructor options</H3>
         <div className="border border-white/[0.08] overflow-x-auto my-6">
@@ -563,6 +569,8 @@ await sdk.sync(provider);`}</Code>
                 ["signer", "Signer", "ethers v6 Signer for sending transactions"],
                 ["privacyPoolAddress", "string", "Proxy contract address"],
                 ["spendingPrivkey", "bigint", "Your 32-byte spending key (never transmitted)"],
+                ["zeroGStorage", "object (optional)", "Enable 0G Storage hint layer for auto note discovery"],
+                ["confirmTimeoutMs", "number (optional)", "Tx confirmation timeout in ms. Default 120 000"],
               ].map(([opt, type, desc]) => (
                 <tr key={opt} className="border-b border-white/[0.05] last:border-0">
                   <td className="px-4 py-3 text-[#eca8d6]/75">{opt}</td>
@@ -635,9 +643,15 @@ await sdk.sync(provider);`}</Code>
           transaction. Two new commitments are inserted on-chain — one for the recipient, one as change.
           No tokens move; no on-chain data links sender to recipient.
         </P>
+        <P>
+          If <code className="font-mono text-white/60">zeroGStorage</code> is configured, the SDK automatically
+          encrypts the recipient's note hint (<code className="font-mono text-white/60">{`{ amount, salt, commitment }`}</code>)
+          and uploads it to 0G Storage after the spend confirms. The recipient's next <code className="font-mono text-white/60">sync()</code> call
+          discovers and decrypts it — no manual communication needed.
+        </P>
         <Callout type="info">
-          The recipient must share their <strong>spending pubkey</strong> with you out-of-band (e.g. via a QR code or
-          a message). The pubkey is derived from their spending privkey via Poseidon2 and is safe to share publicly.
+          The recipient must share their <strong>spending pubkey</strong> with you once (e.g. via a QR code or
+          a message). All future sends to that pubkey are then fully automatic via 0G Storage hints.
         </Callout>
         <H3>Deriving a spending pubkey</H3>
         <Code>{`import { deriveSpendingPubkey } from "stealthpay-sdk";

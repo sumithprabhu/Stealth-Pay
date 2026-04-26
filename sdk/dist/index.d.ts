@@ -7,4 +7,6 @@ export type { ShieldProofInputs, ShieldProofResult, SpendNote, OutputNote, Spend
 export { BN254_PRIME } from "./poseidon2";
 export type { StealthPayConfig, Note, ShieldResult, UnshieldResult, PrivateSendResult, PrivateBalanceResult, } from "./types";
 export { StealthPayError } from "./types";
+export { deriveEncryptionKeypair, receiverPubkeyHash, encryptHint, decryptHint, uploadToStorage, downloadFromStorage, postHint, scanHints, ZG_INDEXER_RPC, ZG_RPC, } from "./HintStore";
+export type { HintPayload } from "./HintStore";
 //# sourceMappingURL=index.d.ts.map

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StealthPayError = exports.BN254_PRIME = exports.fieldToBytes32 = exports.addressToField = exports.computeNullifier = exports.computeCommitment = exports.deriveSpendingPubkey = exports.generateSpendProof = exports.generateShieldProof = exports.MerkleTree = exports.NoteManager = exports.ChainClient = exports.StealthPaySDK = void 0;
+exports.ZG_RPC = exports.ZG_INDEXER_RPC = exports.scanHints = exports.postHint = exports.downloadFromStorage = exports.uploadToStorage = exports.decryptHint = exports.encryptHint = exports.receiverPubkeyHash = exports.deriveEncryptionKeypair = exports.StealthPayError = exports.BN254_PRIME = exports.fieldToBytes32 = exports.addressToField = exports.computeNullifier = exports.computeCommitment = exports.deriveSpendingPubkey = exports.generateSpendProof = exports.generateShieldProof = exports.MerkleTree = exports.NoteManager = exports.ChainClient = exports.StealthPaySDK = void 0;
 var StealthPaySDK_1 = require("./StealthPaySDK");
 Object.defineProperty(exports, "StealthPaySDK", { enumerable: true, get: function () { return StealthPaySDK_1.StealthPaySDK; } });
 var ChainClient_1 = require("./ChainClient");
@@ -20,4 +20,15 @@ var poseidon2_1 = require("./poseidon2");
 Object.defineProperty(exports, "BN254_PRIME", { enumerable: true, get: function () { return poseidon2_1.BN254_PRIME; } });
 var types_1 = require("./types");
 Object.defineProperty(exports, "StealthPayError", { enumerable: true, get: function () { return types_1.StealthPayError; } });
+var HintStore_1 = require("./HintStore");
+Object.defineProperty(exports, "deriveEncryptionKeypair", { enumerable: true, get: function () { return HintStore_1.deriveEncryptionKeypair; } });
+Object.defineProperty(exports, "receiverPubkeyHash", { enumerable: true, get: function () { return HintStore_1.receiverPubkeyHash; } });
+Object.defineProperty(exports, "encryptHint", { enumerable: true, get: function () { return HintStore_1.encryptHint; } });
+Object.defineProperty(exports, "decryptHint", { enumerable: true, get: function () { return HintStore_1.decryptHint; } });
+Object.defineProperty(exports, "uploadToStorage", { enumerable: true, get: function () { return HintStore_1.uploadToStorage; } });
+Object.defineProperty(exports, "downloadFromStorage", { enumerable: true, get: function () { return HintStore_1.downloadFromStorage; } });
+Object.defineProperty(exports, "postHint", { enumerable: true, get: function () { return HintStore_1.postHint; } });
+Object.defineProperty(exports, "scanHints", { enumerable: true, get: function () { return HintStore_1.scanHints; } });
+Object.defineProperty(exports, "ZG_INDEXER_RPC", { enumerable: true, get: function () { return HintStore_1.ZG_INDEXER_RPC; } });
+Object.defineProperty(exports, "ZG_RPC", { enumerable: true, get: function () { return HintStore_1.ZG_RPC; } });
 //# sourceMappingURL=index.js.map

@@ -300,6 +300,12 @@ export class NoteManager {
     return this.tree.size;
   }
 
+  /** Find the leaf index of a commitment in the local tree, if present. */
+  findLeafIndex(commitment: bigint): number | undefined {
+    const idx = this.allLeaves.findIndex(l => l.commitment === commitment);
+    return idx === -1 ? undefined : idx;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Internal helpers
   // ─────────────────────────────────────────────────────────────────────────
