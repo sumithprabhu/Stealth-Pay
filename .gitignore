@@ -10,8 +10,8 @@ node_modules/
 .next/
 out/
 
-# Noir / Nargo (workspace build output)
-circuits/target/
+# Noir / Nargo — ignore witness files but commit compiled bytecode + VKs
+circuits/target/*.gz
 
 # IDE / local editor
 .idea/
