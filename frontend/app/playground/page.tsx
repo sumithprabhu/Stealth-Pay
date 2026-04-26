@@ -4,7 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount } from "wagmi";
+import { useAccount, useWalletClient } from "wagmi";
+import { createWalletClient, custom, createPublicClient, http, parseAbi } from "viem";
+import { zeroGGalileo } from "./providers";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -12,6 +14,18 @@ const MOCK_TOKEN   = "0xB4fd61544493a27a4793F161d6BE153d1A0f6092";
 const POOL_ADDRESS = "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1";
 const RPC_URL      = "https://evmrpc-testnet.0g.ai";
 const EXPLORER     = "https://chainscan-galileo.0g.ai";
+
+export const dynamic = "force-dynamic";
+
+const ERC20_ABI = parseAbi([
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+]);
+
+const POOL_ABI = parseAbi([
+  "function shield((address token, uint256 amount, bytes32 commitment) params, bytes proof) external",
+  "function spend((address token, bytes32 merkleRoot, bytes32[2] nullifiers, bytes32[2] newCommitments, uint256 publicAmount, address recipient) params, bytes proof) external",
+]);
 
 type Op         = "shield" | "privateSend" | "unshield";
 type SignerMode = "wallet" | "privkey";
@@ -50,7 +64,7 @@ function fullCode(op: Op, mode: SignerMode, p: Params) {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Params {
-  token: string; amount: string; pk: string;
+  token: string; amount: string; pk: string; spendingPrivkey: string;
   receiverPubkey: string; recipient: string;
 }
 
@@ -191,72 +205,169 @@ function FaucetButton({ address }: { address?: string }) {
 
 type StreamMsg = { step: string; msg?: string; detail?: string; [key: string]: unknown };
 
-function RunPanel({ op, params }: { op: Op; params: Params }) {
+function RunPanel({ op, params, signerMode }: { op: Op; params: Params; signerMode: SignerMode }) {
   const [state,  setState]  = useState<"idle" | "running" | "done" | "error">("idle");
-  const [lines,  setLines]  = useState<{ text: string; dim?: boolean; green?: boolean; link?: string }[]>([]);
+  const [lines,  setLines]  = useState<{ text: string; dim?: boolean }[]>([]);
   const [result, setResult] = useState<StreamMsg | null>(null);
+  const { data: walletClient } = useWalletClient();
 
-  function addLine(text: string, opts?: { dim?: boolean; green?: boolean; link?: string }) {
-    setLines(prev => [...prev, { text, ...opts }]);
+  function addLine(text: string, dim = false) {
+    setLines(prev => [...prev, { text, dim }]);
+  }
+
+  // ── Wallet mode: /prove → MetaMask signs ────────────────────────────────────
+  async function runWithWallet() {
+    if (!walletClient) throw new Error("Wallet not connected");
+
+    const publicClient = createPublicClient({ chain: zeroGGalileo, transport: http(RPC_URL) });
+    const backendUrl   = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
+    const token  = params.token  || MOCK_TOKEN;
+    const amount = params.amount || "100000000";
+
+    // Stream the proof generation
+    addLine("Requesting ZK proof from backend…");
+    const resp = await fetch(`${backendUrl}/prove`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op, token, amount, spendingPrivkey: params.spendingPrivkey || "0xdeadbeefcafebabe12345678abcdef01", receiverPubkey: params.receiverPubkey, recipient: params.recipient }),
+    });
+    if (!resp.body) throw new Error("No response from backend");
+
+    let proveResult: StreamMsg | null = null;
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf     = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop() ?? "";
+      for (const part of parts) {
+        const line = part.replace(/^data: /, "").trim();
+        if (!line) continue;
+        let msg: StreamMsg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.step === "error") throw new Error(String(msg.msg));
+        if (msg.step === "done") { proveResult = msg; break; }
+        addLine(String(msg.msg ?? ""), msg.step !== "done");
+        if (msg.detail) addLine(`  ${msg.detail}`, true);
+      }
+      if (proveResult) break;
+    }
+
+    if (!proveResult) throw new Error("Proof generation failed");
+    addLine("✓ ZK proof generated");
+
+    const userAddress = walletClient.account.address;
+
+    // ── shield ──────────────────────────────────────────────────────────────
+    if (op === "shield") {
+      const { proof, params: p } = proveResult as unknown as { proof: string; params: { token: string; amount: string; commitment: string } };
+      const amtBig = BigInt(p.amount);
+
+      addLine("Checking token allowance…", true);
+      const allowance = await publicClient.readContract({ address: p.token as `0x${string}`, abi: ERC20_ABI, functionName: "allowance", args: [userAddress, POOL_ADDRESS as `0x${string}`] });
+
+      if ((allowance as bigint) < amtBig) {
+        addLine("→ MetaMask: approve token spend");
+        const approveTx = await walletClient.writeContract({ address: p.token as `0x${string}`, abi: ERC20_ABI, functionName: "approve", args: [POOL_ADDRESS as `0x${string}`, amtBig] });
+        addLine(`  approve tx: ${approveTx}`, true);
+        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        addLine("✓ Approved");
+      }
+
+      addLine("→ MetaMask: submit shield transaction");
+      const shieldTx = await walletClient.writeContract({
+        address: POOL_ADDRESS as `0x${string}`,
+        abi: POOL_ABI,
+        functionName: "shield",
+        args: [{ token: p.token as `0x${string}`, amount: amtBig, commitment: p.commitment as `0x${string}` }, proof as `0x${string}`],
+      });
+      addLine(`  shield tx: ${shieldTx}`, true);
+      await publicClient.waitForTransactionReceipt({ hash: shieldTx });
+
+      setResult({ step: "done", op: "shield", txHash: shieldTx, explorer: `${EXPLORER}/tx/${shieldTx}`, commitment: p.commitment, from: userAddress, to: POOL_ADDRESS });
+
+    // ── spend (privateSend / unshield) ─────────────────────────────────────
+    } else {
+      const { proof, params: p } = proveResult as unknown as { proof: string; params: { token: string; merkleRoot: string; nullifiers: string[]; newCommitments: string[]; publicAmount: string; recipient: string } };
+
+      addLine("→ MetaMask: submit spend transaction");
+      const spendTx = await walletClient.writeContract({
+        address: POOL_ADDRESS as `0x${string}`,
+        abi: POOL_ABI,
+        functionName: "spend",
+        args: [{
+          token: p.token as `0x${string}`,
+          merkleRoot: p.merkleRoot as `0x${string}`,
+          nullifiers: p.nullifiers as [`0x${string}`, `0x${string}`],
+          newCommitments: p.newCommitments as [`0x${string}`, `0x${string}`],
+          publicAmount: BigInt(p.publicAmount),
+          recipient: p.recipient as `0x${string}`,
+        }, proof as `0x${string}`],
+      });
+      addLine(`  spend tx: ${spendTx}`, true);
+      await publicClient.waitForTransactionReceipt({ hash: spendTx });
+
+      setResult({ step: "done", op, txHash: spendTx, explorer: `${EXPLORER}/tx/${spendTx}`, from: userAddress, recipient: p.recipient, publicAmount: p.publicAmount });
+    }
+  }
+
+  // ── Private key mode: /execute (backend signs) ──────────────────────────────
+  async function runWithPrivkey() {
+    if (!params.pk) throw new Error("Enter your private key in the form");
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
+
+    const resp = await fetch(`${backendUrl}/execute`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        op,
+        token:         params.token  || MOCK_TOKEN,
+        amount:        params.amount || "100000000",
+        spendingPrivkey: params.spendingPrivkey || "0xdeadbeefcafebabe12345678abcdef01",
+        signerPrivkey: params.pk,
+        receiverPubkey: params.receiverPubkey || undefined,
+        recipient:      params.recipient      || undefined,
+      }),
+    });
+
+    if (!resp.body) throw new Error("No response body");
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf     = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop() ?? "";
+      for (const part of parts) {
+        const line = part.replace(/^data: /, "").trim();
+        if (!line) continue;
+        let msg: StreamMsg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.step === "error") throw new Error(String(msg.msg));
+        if (msg.step === "done") { setResult(msg); setState("done"); return; }
+        addLine(String(msg.msg ?? ""), msg.step !== "done");
+        if (msg.detail) addLine(`  ${msg.detail}`, true);
+      }
+    }
   }
 
   async function run() {
     setState("running");
     setLines([]);
     setResult(null);
-
-    const body = {
-      op,
-      token:  params.token  || MOCK_TOKEN,
-      amount: params.amount || "100000000",
-      receiverPubkey: params.receiverPubkey || undefined,
-      recipient:      params.recipient      || undefined,
-    };
-
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
-
-      const resp = await fetch(`${backendUrl}/execute`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(body),
-      });
-
-      if (!resp.body) throw new Error("No response body");
-      const reader  = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let   buf     = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-
-        for (const part of parts) {
-          const line = part.replace(/^data: /, "").trim();
-          if (!line) continue;
-          let msg: StreamMsg;
-          try { msg = JSON.parse(line); } catch { continue; }
-
-          if (msg.step === "error") {
-            addLine(`✗ ${msg.msg}`, {});
-            setState("error");
-            return;
-          }
-
-          if (msg.step === "done") {
-            setResult(msg);
-            setState("done");
-            return;
-          }
-
-          const text = msg.detail ? `${msg.msg}` : `${msg.msg}`;
-          const dim  = msg.step !== "done";
-          addLine(text, { dim });
-          if (msg.detail) addLine(`  ${msg.detail}`, { dim: true });
-        }
+      if (signerMode === "wallet") {
+        await runWithWallet();
+        setState("done");
+      } else {
+        await runWithPrivkey();
       }
     } catch (err: unknown) {
       addLine(`✗ ${err instanceof Error ? err.message : String(err)}`);
@@ -337,7 +448,7 @@ export default function PlaygroundPage() {
   const [op,         setOp]         = useState<Op>("shield");
   const [signerMode, setSignerMode] = useState<SignerMode>("wallet");
   const [params, setParams]         = useState<Params>({
-    token: MOCK_TOKEN, amount: "", pk: "", receiverPubkey: "", recipient: "",
+    token: MOCK_TOKEN, amount: "", pk: "", spendingPrivkey: "", receiverPubkey: "", recipient: "",
   });
 
   const { address: connectedAddress } = useAccount();
@@ -450,6 +561,11 @@ export default function PlaygroundPage() {
               <Field label="Amount (raw units)" value={params.amount} onChange={set("amount")}
                 placeholder="100000000" hint="6 decimals — 100000000 = 100 USDC" />
 
+              <Field label="Spending private key (ZK key)"
+                value={params.spendingPrivkey} onChange={set("spendingPrivkey")}
+                placeholder="0xdeadbeef… (leave blank for demo key)"
+                hint="Used to generate ZK proof — separate from your wallet key" />
+
               {op === "privateSend" && (
                 <Field label="Receiver spending pubkey" value={params.receiverPubkey}
                   onChange={set("receiverPubkey")} placeholder="0x1a2b3c..."
@@ -503,7 +619,7 @@ export default function PlaygroundPage() {
             </div>
 
             {/* Run panel lives under the live call on medium screens */}
-            <RunPanel op={op} params={params} />
+            <RunPanel op={op} params={params} signerMode={signerMode} />
           </div>
 
           {/* Right: return type */}
