@@ -9,23 +9,24 @@ ENV PATH="/root/.nargo/bin:${PATH}"
 RUN noirup --version 1.0.0-beta.20
 
 # ── bb (Barretenberg prover) ──────────────────────────────────────────────────
-RUN curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/cpp/scripts/bbup | bash
+# bbup moved to the 'next' branch — install then pin exact version
+RUN curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/refs/heads/next/barretenberg/bbup/install | bash
 ENV PATH="/root/.bb:${PATH}"
 RUN bbup -v 5.0.0-nightly.20260324
 
 # ── App ───────────────────────────────────────────────────────────────────────
 WORKDIR /app
 
-# Copy compiled circuits (needed by SDK for proof generation)
+# Copy compiled circuits (needed by SDK for ZK proof generation)
 COPY circuits/ /circuits/
 
-# Copy and install backend
+# Install backend dependencies
 COPY backend/package.json backend/package-lock.json* ./
 RUN npm install --omit=dev
 
 COPY backend/server.js ./
 
-# Tell the SDK where to find circuits + binaries
+# Tell the SDK where to find circuits and binaries
 ENV STEALTH_PAY_CIRCUITS_DIR=/circuits
 ENV STEALTH_PAY_BB_BIN=/root/.bb/bb
 ENV STEALTH_PAY_NARGO_BIN=/root/.nargo/bin/nargo
