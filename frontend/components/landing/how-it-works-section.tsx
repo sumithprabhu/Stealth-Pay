@@ -9,19 +9,19 @@ const steps = [
     title: "Shield",
     subtitle: "your tokens",
     description:
-      "Approve and deposit any whitelisted ERC-20. The SDK generates a ZK proof that your commitment is honestly computed — the contract inserts it into the Merkle tree and takes custody of the tokens.",
+      "Approve and deposit any whitelisted ERC-20. The SDK generates a ZK proof that your commitment is honestly computed. The contract inserts it into the Merkle tree and takes custody of the tokens.",
     code: `const { commitment } = await sdk.shield(
   "0xA0b8...eB48",   // USDC address
   1_000_000n          // 1 USDC (6 decimals)
 );
-// commitment: 0x2a4f...e91c — now in the pool`,
+// commitment: 0x2a4f...e91c  now in the pool`,
   },
   {
     number: "02",
     title: "Transfer",
     subtitle: "privately",
     description:
-      "Send to any spending pubkey without on-chain linkage. The circuit enforces conservation of value — inputs always equal outputs. Nobody learns sender, receiver, or amount.",
+      "Send to any spending pubkey without on-chain linkage. The circuit enforces conservation of value. Inputs always equal outputs. Nobody learns sender, receiver, or amount.",
     code: `await sdk.privateSend(
   "0xA0b8...eB48",       // token
   500_000n,              // amount
@@ -34,7 +34,7 @@ const steps = [
     title: "Unshield",
     subtitle: "to any address",
     description:
-      "Prove you own a note without revealing which one. Withdraw tokens to any address — the nullifier prevents double-spend without ever linking the original deposit.",
+      "Prove you own a note without revealing which one. Withdraw tokens to any address. The nullifier prevents double-spend without ever linking the original deposit.",
     code: `await sdk.unshield(
   "0xA0b8...eB48",   // token
   500_000n,           // amount

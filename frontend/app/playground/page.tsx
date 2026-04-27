@@ -73,7 +73,7 @@ const RETURNS: Record<Op, { type: string; fields: [string, string, string][] }> 
     type: "ShieldResult",
     fields: [
       ["txHash",     "string", "transaction hash"],
-      ["commitment", "bigint", "your note — store privately"],
+      ["commitment", "bigint", "your note, store privately"],
       ["amount",     "bigint", "shielded amount"],
       ["token",      "string", "token address"],
     ],
@@ -119,7 +119,7 @@ const OPS: { id: Op; label: string; badge: string; badgeColor: string; desc: str
     label: "sdk.unshield()",
     badge: "private → public",
     badgeColor: "text-sky-400 border-sky-400/40",
-    desc: "Withdraw tokens to any public address. ZK proof nullifies your note — zero double-spend risk.",
+    desc: "Withdraw tokens to any public address. ZK proof nullifies your note, zero double-spend risk.",
   },
 ];
 
@@ -196,7 +196,7 @@ function FaucetButton({ address }: { address?: string }) {
       disabled={!address || state === "loading"}
       className="w-full border border-white/25 py-2.5 text-sm font-mono text-white/80 hover:border-[#eca8d6]/60 hover:text-white hover:bg-[#eca8d6]/[0.06] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
     >
-      {state === "loading" ? "Sending…" : state === "err" ? "Failed — retry" : "✦  Get 1 000 test USDC"}
+      {state === "loading" ? "Sending…" : state === "err" ? "Failed, retry" : "✦  Get 1 000 test USDC"}
     </button>
   );
 }
@@ -402,7 +402,7 @@ function RunPanel({ op, params, signerMode }: { op: Op; params: Params; signerMo
       {/* Log stream */}
       <div className="p-4 min-h-[100px] font-mono text-sm space-y-0.5">
         {lines.length === 0 && state === "idle" && (
-          <p className="text-white/30 text-xs">Press Run — a real transaction will be submitted on-chain.</p>
+          <p className="text-white/30 text-xs">Press Run. A real transaction will be submitted on-chain.</p>
         )}
         {lines.map((l, i) => (
           <p key={i} className={`leading-relaxed ${l.dim ? "text-white/45" : "text-white/85"}`}>{l.text}</p>
@@ -489,7 +489,7 @@ export default function PlaygroundPage() {
             Try before you build.
           </h1>
           <p className="text-white/65 max-w-xl">
-            Pick an operation and signer mode. Fill in parameters — the live call and full
+            Pick an operation and signer mode. Fill in parameters. The live call and full
             integration code update instantly. Copy and run in your project.
           </p>
         </div>
@@ -548,7 +548,7 @@ export default function PlaygroundPage() {
                 </div>
               ) : (
                 <Field label="Private key" value={params.pk} onChange={set("pk")}
-                  placeholder="0xdeadbeef..." hint="Signs transactions locally — not sent anywhere" />
+                  placeholder="0xdeadbeef..." hint="Signs transactions locally, not sent anywhere" />
               )}
             </div>
 
@@ -559,12 +559,12 @@ export default function PlaygroundPage() {
               <Field label="Token address" value={params.token} onChange={set("token")}
                 placeholder={MOCK_TOKEN} hint="Pre-filled: testnet MockUSDC" />
               <Field label="Amount (raw units)" value={params.amount} onChange={set("amount")}
-                placeholder="100000000" hint="6 decimals — 100000000 = 100 USDC" />
+                placeholder="100000000" hint="6 decimals (100000000 = 100 USDC)" />
 
               <Field label="Spending private key (ZK key)"
                 value={params.spendingPrivkey} onChange={set("spendingPrivkey")}
                 placeholder="0xdeadbeef… (leave blank for demo key)"
-                hint="Used to generate ZK proof — separate from your wallet key" />
+                hint="Used to generate ZK proof, separate from your wallet key" />
 
               {op === "privateSend" && (
                 <Field label="Receiver spending pubkey" value={params.receiverPubkey}

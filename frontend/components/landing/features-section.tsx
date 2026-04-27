@@ -15,14 +15,14 @@ const features = [
     number: "02",
     title: "Private Transfers",
     description:
-      "Send tokens to anyone without on-chain visibility. The recipient gets a commitment they can spend — nobody else learns who sent what to whom.",
+      "Send tokens to anyone without on-chain visibility. The recipient gets a commitment they can spend. Nobody else learns who sent what to whom.",
     stats: { value: "2-in / 2-out", label: "note model" },
   },
   {
     number: "03",
     title: "Merkle Note System",
     description:
-      "Your notes live in a Poseidon2 Merkle tree. Membership proofs are generated locally — only you can spend your notes, proven by math.",
+      "Your notes live in a Poseidon2 Merkle tree. Membership proofs are generated locally. Only you can spend your notes, proven by math.",
     stats: { value: "2²⁰", label: "max commitments" },
   },
   {
@@ -155,7 +155,7 @@ export function FeaturesSection() {
                   isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
                 }`}
               >
-                Every feature is built from first principles — cryptographic proofs, not promises.
+                Every feature is built from first principles. Cryptographic proofs, not promises.
                 No third parties, no honeypots, no exceptions.
               </p>
             </div>

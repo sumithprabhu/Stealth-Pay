@@ -22,7 +22,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: 'Stealth Pay',
-  description: 'Shield tokens, transact privately, withdraw freely. ZK-proof-backed privacy for ERC-20s on 0G Chain. No trusted parties — just math.',
+  description: 'Shield tokens, transact privately, withdraw freely. ZK-proof-backed privacy for ERC-20s on 0G Chain. No trusted parties, just math.',
 }
 
 export default function RootLayout({
