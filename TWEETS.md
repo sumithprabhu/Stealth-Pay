@@ -479,7 +479,6 @@ that's the architecture.
 Short, hard-hitting. One idea per image. No explanation needed.
 
 ---
-
 **Q1.**
 > "Your wallet address is a public resume
 > nobody asked you to publish."
