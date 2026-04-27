@@ -186,7 +186,7 @@ export function HeroSection() {
             }`}
           >
             <p className="text-lg text-white/50 max-w-md leading-relaxed">
-              Shield tokens, transact privately, withdraw freely. No trusted parties. Just math.
+              Shield tokens, transact privately, withdraw freely. No trusted parties — just math.
             </p>
           </div>
         </div>

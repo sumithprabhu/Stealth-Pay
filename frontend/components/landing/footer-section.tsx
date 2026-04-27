@@ -58,7 +58,7 @@ export function FooterSection() {
               </a>
 
               <p className="text-white/50 leading-relaxed mb-8 max-w-xs text-sm">
-                Zero-knowledge privacy for ERC-20 tokens on 0G Chain. Shield, transact, and withdraw. No trusted parties, just math.
+                Zero-knowledge privacy for ERC-20 tokens on 0G Chain. Shield, transact, and withdraw — no trusted parties, just math.
               </p>
 
               <div className="flex gap-6">

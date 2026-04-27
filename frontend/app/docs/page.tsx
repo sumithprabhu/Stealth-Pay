@@ -13,8 +13,8 @@ export default function DocsIntroPage() {
 
       <p className="text-white/55 leading-relaxed mb-4 text-lg">
         Stealth <span className="text-[#eca8d6]">Pay</span> is a zero-knowledge privacy protocol for ERC-20 tokens on 0G Chain. It lets users
-        shield tokens into an on-chain pool, transact privately inside it, and withdraw to any address,
-        with no observable link between deposit and withdrawal.
+        shield tokens into an on-chain pool, transact privately inside it, and withdraw to any address
+        — with no observable link between deposit and withdrawal.
       </p>
       <p className="text-white/55 leading-relaxed mb-4">
         Every operation is backed by an <strong className="text-white/75">UltraHonk ZK proof</strong> verified

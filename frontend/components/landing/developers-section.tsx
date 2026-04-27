@@ -10,7 +10,7 @@ const features = [
   },
   {
     title: "Local proof generation",
-    description: "Nargo + Barretenberg CLI. No cloud, no leaks. Proofs stay on your machine.",
+    description: "Nargo + Barretenberg CLI. No cloud, no leaks — proofs stay on your machine.",
   },
   {
     title: "Auto Merkle sync",
@@ -89,8 +89,8 @@ export function DevelopersSection() {
             }`}
           >
             <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-md">
-              One SDK. Three primitives: shield, spend, unshield. Everything else handled for you: proofs,
-              Merkle siblings, nullifiers.
+              One SDK. Three primitives: shield, spend, unshield. Everything else — proofs,
+              Merkle siblings, nullifiers — handled for you.
             </p>
             <div className="grid grid-cols-2 gap-6">
               {features.map((feature, index) => (

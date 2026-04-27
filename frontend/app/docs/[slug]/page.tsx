@@ -51,9 +51,9 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
       <>
         <P>
           Stealth <span className="text-[#eca8d6]">Pay</span> is infrastructure. The SDK gives you three
-          primitives: <strong className="text-white/80">shield</strong>,{" "}
+          primitives — <strong className="text-white/80">shield</strong>,{" "}
           <strong className="text-white/80">privateSend</strong>, and{" "}
-          <strong className="text-white/80">unshield</strong>, with cryptographic guarantees that
+          <strong className="text-white/80">unshield</strong> — and cryptographic guarantees that
           nobody can link sender to receiver on-chain. What you build on top, and how you store or
           communicate note data privately, is entirely your architecture decision.
         </P>
@@ -61,7 +61,7 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
         <Callout type="info">
           Every operation produces a <strong className="text-white/80">commitment hash</strong> and a{" "}
           <strong className="text-white/80">nullifier</strong>. These are the only things that ever
-          touch the chain. Amounts, recipients, and salt values stay off-chain, in your database,
+          touch the chain. Amounts, recipients, and salt values stay off-chain — in your database,
           encrypted in a message, or wherever your product stores them.
         </Callout>
 
@@ -85,7 +85,7 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
               {[
                 ["shield(token, amount)", "Sender (A)", "Commitment inserted into Merkle tree. Tokens locked in pool.", "amount, salt, spending pubkey"],
                 ["privateSend(token, amount, B_pubkey)", "Sender (A)", "A's note nullified. New commitment for B inserted.", "Auto-posted to 0G Storage if zeroGStorage configured"],
-                ["unshield(token, amount, recipient)", "Note owner", "Nullifier published. Tokens released to recipient.", "Nothing (this is the exit)"],
+                ["unshield(token, amount, recipient)", "Note owner", "Nullifier published. Tokens released to recipient.", "Nothing — this is the exit"],
               ].map(([p, w, on, off]) => (
                 <tr key={p} className="border-b border-white/[0.05] last:border-0 align-top">
                   <td className="px-4 py-3 font-mono text-[#eca8d6]/80 text-xs">{p}</td>
@@ -102,7 +102,7 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
         <H2>Real on-chain example</H2>
         <P>
           The following transactions were produced by the e2e test suite running against 0G Galileo
-          testnet. They show exactly what an observer sees, and exactly what they cannot see.
+          testnet. They show exactly what an observer sees — and exactly what they cannot see.
         </P>
 
         <div className="space-y-4 my-6">
@@ -114,7 +114,7 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
               <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">to</span><code className="font-mono text-white/60">0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1</code><span className="text-white/25 ml-2">(pool)</span></div>
               <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">commitment</span><code className="font-mono text-[#eca8d6]/70 break-all">0x298e3a81cdffa15ffb2de45c46b92b99f7c3e26a4b5bc0ebcdced1e89b095ee5</code></div>
               <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">leaf index</span><code className="font-mono text-white/60">5</code></div>
-              <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">visible amount</span><span className="text-white/35 text-xs italic">none (hidden in commitment)</span></div>
+              <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">visible amount</span><span className="text-white/35 text-xs italic">none — hidden in commitment</span></div>
             </div>
           </div>
           <div className="border border-white/[0.08] p-5">
@@ -124,8 +124,8 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
               <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">caller</span><code className="font-mono text-white/60">0xD91D61bd2841839eA8c37581F033C9a91Be6a5A6</code></div>
               <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">recipient</span><code className="font-mono text-white/60">0xe088622BC9c8082f9A250bDC91D0CF64577FFDb9</code></div>
               <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">released</span><code className="font-mono text-white/60">49.95 USDC</code><span className="text-white/25 ml-2">(after 0.1% fee)</span></div>
-              <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">nullifier</span><code className="font-mono text-[#eca8d6]/70 break-all">published on-chain, prevents double spend</code></div>
-              <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">link to shield</span><span className="text-white/35 text-xs italic">none (ZK proof reveals no connection)</span></div>
+              <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">nullifier</span><code className="font-mono text-[#eca8d6]/70 break-all">published on-chain — prevents double spend</code></div>
+              <div className="flex gap-3"><span className="text-white/35 w-28 shrink-0">link to shield</span><span className="text-white/35 text-xs italic">none — ZK proof reveals no connection</span></div>
             </div>
           </div>
         </div>
@@ -136,7 +136,7 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
         </Callout>
 
         {/* ── Payroll ── */}
-        <H2>Use case 1: Private payroll</H2>
+        <H2>Use case 1 — Private payroll</H2>
         <P>
           A company pays 50 employees every month. With public transfers, anyone can see every salary.
           With Stealth <span className="text-[#eca8d6]">Pay</span>, the company shields the total
@@ -146,7 +146,7 @@ const pages: Record<string, { eyebrow: string; title: string; content: ReactElem
         <Code lang="ts">{`// Company (run once per cycle)
 await sdk.shield(USDC, totalPayroll);  // one public deposit
 
-// Per employee, company stores { amount, salt } in its HR DB
+// Per employee — company stores { amount, salt } in its HR DB
 for (const employee of employees) {
   await sdk.privateSend(USDC, employee.salary, employee.spendingPubkey);
   // commitment hash → store in HR system against employee record
@@ -158,7 +158,7 @@ await sdk.unshield(USDC, mySalary, myWallet);`}</Code>
         <P>
           <strong className="text-white/75">What the company stores privately:</strong> a mapping of{" "}
           <code className="font-mono text-white/60">{`{ employeeId → { commitment, amount, salt } }`}</code>.
-          This is standard HR data. Store it in your existing payroll database. The chain only sees
+          This is standard HR data — store it in your existing payroll database. The chain only sees
           commitment hashes and nullifiers, not names or amounts.
         </P>
         <P>
@@ -167,12 +167,12 @@ await sdk.unshield(USDC, mySalary, myWallet);`}</Code>
         </P>
 
         {/* ── B2B ── */}
-        <H2>Use case 2: Confidential B2B payments</H2>
+        <H2>Use case 2 — Confidential B2B payments</H2>
         <P>
           Two businesses settling invoices. Neither wants competitors to see payment amounts,
           frequency, or counterparty relationships.
         </P>
-        <Code lang="ts">{`// Business A paying an invoice
+        <Code lang="ts">{`// Business A — paying an invoice
 const result = await sdk.privateSend(USDC, invoiceAmount, businessB_pubkey);
 
 // A stores privately (e.g. in their accounting system):
@@ -181,20 +181,20 @@ const result = await sdk.privateSend(USDC, invoiceAmount, businessB_pubkey);
 // A sends to B over a private channel (Signal, encrypted email, API):
 // { commitment, amount, salt }  ← "here is your payment note"
 
-// Business B after receiving the note details
+// Business B — after receiving the note details
 await sdk.noteManager.trackNote(commitment, USDC, amount, salt, leafIndex);
 await sdk.unshield(USDC, amount, businessB_wallet);`}</Code>
         <P>
           <strong className="text-white/75">The "hint" is yours to design.</strong> How A communicates{" "}
           <code className="font-mono text-white/60">{`{ amount, salt }`}</code> to B is not a protocol
-          concern, it is a product concern. Use your existing secure channel: an encrypted API
+          concern — it is a product concern. Use your existing secure channel: an encrypted API
           webhook, a Signal message, an in-app notification. Stealth{" "}
           <span className="text-[#eca8d6]">Pay</span> provides the cryptographic guarantee; you
           provide the delivery mechanism.
         </P>
 
         {/* ── Treasury ── */}
-        <H2>Use case 3: DAO treasury distribution</H2>
+        <H2>Use case 3 — DAO treasury distribution</H2>
         <P>
           A DAO grants funding to builders. Public grants reveal grant sizes to competitors and create
           tax/regulatory exposure for recipients before they are ready to disclose.
@@ -202,7 +202,7 @@ await sdk.unshield(USDC, amount, businessB_wallet);`}</Code>
         <Code lang="ts">{`// DAO multisig shields the grants pool
 await sdk.shield(USDC, grantsPool);
 
-// Per grantee, DAO stores commitment in governance record
+// Per grantee — DAO stores commitment in governance record
 for (const grantee of approvedGrants) {
   const result = await sdk.privateSend(
     USDC,
@@ -216,23 +216,23 @@ for (const grantee of approvedGrants) {
 await sdk.unshield(USDC, grantAmount, granteeWallet);`}</Code>
         <P>
           The DAO's governance vote approves amounts and pubkeys. The on-chain execution reveals only
-          that funds moved through the pool, not to whom or how much per recipient.
+          that funds moved through the pool — not to whom or how much per recipient.
         </P>
 
         {/* ── Streaming ── */}
-        <H2>Use case 4: Subscription &amp; streaming payments</H2>
+        <H2>Use case 4 — Subscription &amp; streaming payments</H2>
         <P>
           A SaaS platform charges subscribers monthly without exposing customer wallet history.
           Each billing cycle the platform shields fees and sends to a per-customer commitment.
           Customers accumulate notes and withdraw in bulk.
         </P>
-        <Code lang="ts">{`// Platform monthly billing job
+        <Code lang="ts">{`// Platform — monthly billing job
 for (const subscriber of activeSubscribers) {
   await sdk.privateSend(USDC, subscriber.monthlyFee, subscriber.pubkey);
   // store commitment → subscriber record in your DB
 }
 
-// Customer quarterly withdrawal
+// Customer — quarterly withdrawal
 await sdk.sync(provider);
 const balance = sdk.getPrivateBalance(USDC);
 await sdk.unshield(USDC, balance.balance, customerWallet);`}</Code>
@@ -254,12 +254,12 @@ await sdk.unshield(USDC, balance.balance, customerWallet);`}</Code>
             </thead>
             <tbody>
               {[
-                ["commitment hash", "Sender", "Your DB (index by user/invoice ID)"],
+                ["commitment hash", "Sender", "Your DB — index by user/invoice ID"],
                 ["amount + salt", "Sender + Receiver", "Encrypted at rest; communicate over secure channel"],
-                ["spending privkey", "End user only", "Client-side only, never send to your server"],
-                ["spending pubkey", "Your platform", "Public, safe to store in DB, share openly"],
-                ["nullifier", "Chain (public)", "Already on-chain, no action needed"],
-                ["recipient address", "Receiver", "Off-chain, never revealed by the protocol"],
+                ["spending privkey", "End user only", "Client-side only — never send to your server"],
+                ["spending pubkey", "Your platform", "Public — safe to store in DB, share openly"],
+                ["nullifier", "Chain (public)", "Already on-chain — no action needed"],
+                ["recipient address", "Receiver", "Off-chain — never revealed by the protocol"],
               ].map(([d, w, s]) => (
                 <tr key={d} className="border-b border-white/[0.05] last:border-0 align-top">
                   <td className="px-4 py-3 font-mono text-[#eca8d6]/80 text-xs">{d}</td>
@@ -280,7 +280,7 @@ await sdk.unshield(USDC, balance.balance, customerWallet);`}</Code>
         <H2>The builder's mental model</H2>
         <P>
           Think of Stealth <span className="text-[#eca8d6]">Pay</span> the same way you think of
-          HTTPS. You do not implement TLS, you call it. The protocol guarantees the cryptographic
+          HTTPS. You do not implement TLS — you call it. The protocol guarantees the cryptographic
           property. Your product is built on top: the UI, the business logic, the data storage, the
           user experience. The privacy guarantee is not your code's responsibility. It is the
           protocol's.
@@ -299,7 +299,7 @@ await sdk.unshield(USDC, balance.balance, customerWallet);`}</Code>
       <>
         <P>
           Stealth <span className="text-[#eca8d6]">Pay</span> is built from four layers that never trust each other. Each layer can be verified
-          independently. The security model does not rely on any single point of trust.
+          independently — the security model does not rely on any single point of trust.
         </P>
         <div className="my-8 relative border border-white/[0.08] overflow-hidden">
           <img
@@ -310,10 +310,10 @@ await sdk.unshield(USDC, balance.balance, customerWallet);`}</Code>
           />
           <div className="relative z-10 p-8 space-y-0">
             {[
-              { layer: "L4: App", desc: "TypeScript SDK. Runs in your browser. Your keys never leave your device." },
-              { layer: "L3: Prover", desc: "Nargo + Barretenberg CLI. Proof generation is local. Nothing is sent to a server." },
-              { layer: "L2: Contracts", desc: "PrivacyPool (UUPS proxy) + UltraHonk verifiers. Logic is immutable once deployed." },
-              { layer: "L1: Chain", desc: "0G Galileo testnet. Sub-second finality, near-zero gas, EVM-compatible." },
+              { layer: "L4 — App", desc: "TypeScript SDK. Runs in your browser. Your keys never leave your device." },
+              { layer: "L3 — Prover", desc: "Nargo + Barretenberg CLI. Proof generation is local. Nothing is sent to a server." },
+              { layer: "L2 — Contracts", desc: "PrivacyPool (UUPS proxy) + UltraHonk verifiers. Logic is immutable once deployed." },
+              { layer: "L1 — Chain", desc: "0G Galileo testnet. Sub-second finality, near-zero gas, EVM-compatible." },
             ].map((l, i) => (
               <div key={l.layer} className="flex items-start gap-5 py-5 border-b border-white/[0.05] last:border-0">
                 <span className="shrink-0 w-6 h-6 flex items-center justify-center text-xs font-mono text-white/25 border border-white/[0.08] mt-0.5">{i + 1}</span>
@@ -327,7 +327,8 @@ await sdk.unshield(USDC, balance.balance, customerWallet);`}</Code>
         </div>
         <H3>Trust model</H3>
         <P>
-          The only trust assumption is that the ZK proof system (UltraHonk / Barretenberg) is sound, i.e., false proofs cannot be constructed. No admin key, oracle, or relayer is required at runtime.
+          The only trust assumption is that the ZK proof system (UltraHonk / Barretenberg) is sound —
+          i.e., false proofs cannot be constructed. No admin key, oracle, or relayer is required at runtime.
           The contract owner can pause the pool and whitelist tokens, but cannot access user funds.
         </P>
       </>
@@ -344,7 +345,7 @@ await sdk.unshield(USDC, balance.balance, customerWallet);`}</Code>
       <>
         <P>
           Shielding moves ERC-20 tokens from your wallet into the privacy pool. The contract takes
-          custody of the tokens; you receive a private <em>note</em>, a commitment only you can spend.
+          custody of the tokens; you receive a private <em>note</em> — a commitment only you can spend.
         </P>
         <div className="my-8 flex justify-center p-6 border border-white/[0.08] bg-black/30">
           <ShieldFlowDiagram />
@@ -399,7 +400,7 @@ commitment = poseidon2_hash4(spending_pubkey, token, amount, salt)`}</Code>
         </div>
         <H3>2-in / 2-out note model</H3>
         <P>
-          Every spend takes exactly two input notes and produces exactly two output notes: one for the
+          Every spend takes exactly two input notes and produces exactly two output notes — one for the
           recipient and one as change back to the sender. If you only need one input, the circuit accepts
           a dummy zero note. If no change is needed, the change note carries zero value.
         </P>
@@ -542,7 +543,7 @@ const signer   = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
 const sdk = new StealthPaySDK({
   signer,
   privacyPoolAddress: "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1",
-  spendingPrivkey: mySpendingPrivkey, // bigint, kept locally
+  spendingPrivkey: mySpendingPrivkey, // bigint — kept locally
 
   // Optional: enable 0G Storage hint layer so privateSend() auto-posts
   // encrypted notes and sync() auto-discovers received notes.
@@ -597,8 +598,8 @@ await sdk.sync(provider);`}</Code>
     content: (
       <>
         <Code>{`const { commitment, txHash } = await sdk.shield(
-  tokenAddress,   // string (ERC-20 contract address)
-  amount          // bigint (amount in base units)
+  tokenAddress,   // string — ERC-20 contract address
+  amount          // bigint — amount in base units
 );`}</Code>
         <H3>What happens</H3>
         <ol className="space-y-2 my-4">
@@ -635,18 +636,18 @@ await sdk.sync(provider);`}</Code>
         <Code>{`await sdk.privateSend(
   tokenAddress,        // string
   amount,              // bigint
-  receiverPubkey       // bigint (recipient's spending pubkey)
+  receiverPubkey       // bigint — recipient's spending pubkey
 );`}</Code>
         <P>
           Selects up to two unspent notes from NoteManager, generates a spend proof, and submits the
-          transaction. Two new commitments are inserted on-chain: one for the recipient, one as change.
+          transaction. Two new commitments are inserted on-chain — one for the recipient, one as change.
           No tokens move; no on-chain data links sender to recipient.
         </P>
         <P>
           If <code className="font-mono text-white/60">zeroGStorage</code> is configured, the SDK automatically
           encrypts the recipient's note hint (<code className="font-mono text-white/60">{`{ amount, salt, commitment }`}</code>)
           and uploads it to 0G Storage after the spend confirms. The recipient's next <code className="font-mono text-white/60">sync()</code> call
-          discovers and decrypts it, no manual communication needed.
+          discovers and decrypts it — no manual communication needed.
         </P>
         <Callout type="info">
           The recipient must share their <strong>spending pubkey</strong> with you once (e.g. via a QR code or
@@ -671,7 +672,7 @@ const pubkey = deriveSpendingPubkey(spendingPrivkey); // bigint → bigint`}</Co
         <Code>{`await sdk.unshield(
   tokenAddress,   // string
   amount,         // bigint
-  recipient       // string (any Ethereum address)
+  recipient       // string — any Ethereum address
 );`}</Code>
         <P>
           Proves ownership of a note and withdraws tokens to <code className="font-mono text-white/60">recipient</code>.
@@ -786,7 +787,7 @@ function unpause() external;`}</Code>
 event Spent(bytes32[2] nullifiers, bytes32[2] newCommitments, address recipient);`}</Code>
         <Callout type="info">
           When <code className="font-mono">recipient</code> is <code className="font-mono">address(0)</code>,
-          the spend is a private transfer. No tokens leave the pool; two new commitments are inserted instead.
+          the spend is a private transfer — no tokens leave the pool, two new commitments are inserted instead.
         </Callout>
       </>
     ),
@@ -808,12 +809,12 @@ event Spent(bytes32[2] nullifiers, bytes32[2] newCommitments, address recipient)
   bytes calldata proof,
   bytes32[] calldata publicInputs
 ) external view returns (bool);`}</Code>
-        <H3>ShieldVerifier public inputs</H3>
+        <H3>ShieldVerifier — public inputs</H3>
         <P>9 inputs: 8 aggregation object zeros followed by the commitment hash.</P>
         <Code lang="solidity">{`bytes32[9] memory inputs;
 // inputs[0..7] = 0  (aggregation object)
 inputs[8] = bytes32(commitment);`}</Code>
-        <H3>SpendVerifier public inputs</H3>
+        <H3>SpendVerifier — public inputs</H3>
         <P>16 inputs: 8 aggregation zeros, then token, merkleRoot, nullifiers[0], nullifiers[1], newCommitments[0], newCommitments[1], amount, recipient.</P>
         <Code lang="solidity">{`bytes32[16] memory inputs;
 // inputs[0..7]  = 0  (aggregation object)
@@ -881,7 +882,7 @@ inputs[15] = bytes32(uint256(uint160(recipient)));`}</Code>
       <>
         <P>
           Written in Noir. Proves that a commitment is honestly computed from your spending key,
-          token, amount, and salt, without revealing any of those values.
+          token, amount, and salt — without revealing any of those values.
         </P>
         <Code lang="noir">{`// Private inputs (never revealed on-chain)
 struct ShieldInputs {
@@ -897,7 +898,7 @@ assert(commitment == poseidon2_hash4(
 ));`}</Code>
         <P>
           The proof is verified by <code className="font-mono text-white/60">ShieldVerifier</code> on-chain.
-          Only the commitment is public. It reveals nothing about the depositor.
+          Only the commitment is public — it reveals nothing about the depositor.
         </P>
         <H3>Compiling</H3>
         <Code lang="bash">{`cd circuits/shield
@@ -921,7 +922,7 @@ bb contract -k target/vk -o ../../contracts/contracts/ShieldVerifier.sol`}</Code
         </P>
         <ol className="space-y-3 my-6">
           {[
-            "Both input notes belong to the caller: the spending key matches both commitments.",
+            "Both input notes belong to the caller — the spending key matches both commitments.",
             "Both input commitments are members of the current Merkle tree (membership proof).",
             "Nullifiers are correctly derived: nullifier = Poseidon2(privkey, commitment).",
             "Output commitments are correctly formed for the specified recipients.",
@@ -953,7 +954,7 @@ recipient:        Field  // address(0) for private transfers`}</Code>
     content: (
       <>
         <P>
-          All hashing in Stealth <span className="text-[#eca8d6]">Pay</span> uses Poseidon2 over BN254, covering commitments, nullifiers, and Merkle
+          All hashing in Stealth <span className="text-[#eca8d6]">Pay</span> uses Poseidon2 over BN254 — commitments, nullifiers, and Merkle
           nodes. It is ZK-friendly (cheap to prove in a circuit) and algebraically native to the
           BN254 field used by UltraHonk.
         </P>
