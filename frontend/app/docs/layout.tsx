@@ -50,6 +50,12 @@ const sections = [
       { slug: "circuits-poseidon", label: "Poseidon2 hash" },
     ],
   },
+  {
+    group: "Security",
+    items: [
+      { slug: "ai-security-report", label: "AI Security Report" },
+    ],
+  },
 ];
 
 function Sidebar() {
