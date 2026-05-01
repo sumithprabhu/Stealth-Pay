@@ -21,3 +21,13 @@ circuits/target/*.gz
 # Logs and OS noise
 *.log
 .DS_Store
+
+# Internal — not for public repo
+BUILD_IN_PUBLIC.md
+TWEETS.md
+
+# Remotion video project
+video/
+
+# Activity bot — contains private keys
+activity-bot.js
