@@ -18,9 +18,9 @@ export interface StealthPayConfig {
    * and hint scanning on sync(). Optional: if omitted hints are not posted.
    */
   zeroGStorage?: {
-    /** 0G Storage indexer RPC URL. Defaults to standard testnet indexer. */
+    /** 0G Storage indexer RPC URL. */
     indexerRpc?: string;
-    /** 0G Chain RPC used by the storage indexer. Defaults to testnet. */
+    /** 0G Chain RPC used by the storage indexer. */
     rpc?: string;
   };
 }

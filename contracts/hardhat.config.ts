@@ -45,7 +45,7 @@ const config: HardhatUserConfig = {
     },
     zeroGMainnet: {
       url: process.env.ZERO_G_MAINNET_RPC ?? "https://evmrpc.0g.ai",
-      chainId: 0, // update when mainnet launches
+      chainId: 16661,
       accounts: [DEPLOYER_PRIVATE_KEY],
       gasPrice: "auto",
     },
@@ -53,14 +53,23 @@ const config: HardhatUserConfig = {
   etherscan: {
     apiKey: {
       zeroGTestnet: process.env.ZERO_G_EXPLORER_API_KEY ?? "",
+      zeroGMainnet: process.env.ZERO_G_EXPLORER_API_KEY ?? "",
     },
     customChains: [
       {
         network: "zeroGTestnet",
         chainId: 16602,
         urls: {
-          apiURL: "https://chainscan-galileo.0g.ai/api",
+          apiURL: "https://chainscan-galileo.0g.ai/open/api",
           browserURL: "https://chainscan-galileo.0g.ai",
+        },
+      },
+      {
+        network: "zeroGMainnet",
+        chainId: 16661,
+        urls: {
+          apiURL: "https://chainscan.0g.ai/open/api",
+          browserURL: "https://chainscan.0g.ai",
         },
       },
     ],

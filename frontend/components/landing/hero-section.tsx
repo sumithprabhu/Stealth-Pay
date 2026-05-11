@@ -151,6 +151,21 @@ export function HeroSection() {
 
       <div className="relative z-10 w-full max-w-[1400px] mx-auto px-6 lg:px-12 py-32 lg:py-40">
         <div className="lg:max-w-[60%]">
+          {/* Live badge */}
+          <div
+            className={`mb-5 transition-all duration-700 ${
+              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+            }`}
+          >
+            <span className="inline-flex items-center gap-2 border border-[#eca8d6]/25 bg-[#eca8d6]/5 px-3 py-1.5 text-xs font-mono text-[#eca8d6]">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#eca8d6] opacity-60" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#eca8d6]" />
+              </span>
+              Live on 0G Mainnet
+            </span>
+          </div>
+
           {/* Eyebrow */}
           <div
             className={`mb-8 transition-all duration-700 ${

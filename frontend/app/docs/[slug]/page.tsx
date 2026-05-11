@@ -5,7 +5,14 @@ import {
   ShieldFlowDiagram, MerkleTreeDiagram, SpendFlowDiagram,
 } from "../_components/shared";
 
-const deployments = [
+const mainnetDeployments = [
+  { name: "ShieldVerifier",   address: "0x3F2Fd4E070a333446FF0D8886F513a0419A0BAF5" },
+  { name: "SpendVerifier",    address: "0x190314E281C7f92bBe0945a4a059Fa74883F0B9C" },
+  { name: "PrivacyPoolImpl",  address: "0x90AC4F119133559b37E4703E6ac30fFD4020c649" },
+  { name: "PrivacyPoolProxy", address: "0x154d75521D449974d18c85600149b885DA5bBA85" },
+];
+
+const testnetDeployments = [
   { name: "ShieldVerifier",   address: "0x89CD2172470C1aC071117Fe2085780DAA6e9656a" },
   { name: "SpendVerifier",    address: "0xe1E73e47CcbDB78f70A84E8757B51807E1D42386" },
   { name: "PrivacyPoolImpl",  address: "0x0c7aEF68936Da0c59c085d1F685dBBBf2509D9Db" },
@@ -838,7 +845,7 @@ inputs[15] = bytes32(uint256(uint160(recipient)));`}</Code>
     next: { href: "/docs/circuits-shield", label: "Shield circuit" },
     content: (
       <>
-        <P>All contracts deployed on 0G Galileo testnet, chain ID 16602.</P>
+        <H3>0G Mainnet (chainId 16661)</H3>
         <div className="my-6 border border-white/[0.08] overflow-x-auto">
           <table className="w-full text-sm font-mono">
             <thead>
@@ -848,7 +855,7 @@ inputs[15] = bytes32(uint256(uint160(recipient)));`}</Code>
               </tr>
             </thead>
             <tbody>
-              {deployments.map((d) => (
+              {mainnetDeployments.map((d) => (
                 <tr key={d.name} className="border-b border-white/[0.05] last:border-0">
                   <td className="px-5 py-3 text-[#eca8d6]/75">{d.name}</td>
                   <td className="px-5 py-3 text-white/45 break-all">{d.address}</td>
@@ -857,17 +864,41 @@ inputs[15] = bytes32(uint256(uint160(recipient)));`}</Code>
             </tbody>
           </table>
         </div>
-        <Callout type="tip">
-          Pass the <strong>PrivacyPoolProxy</strong> address to <code className="font-mono">StealthPaySDK</code>.
-          The implementation address is for verification only.
-        </Callout>
-        <H3>Network details</H3>
+        <Code lang="json">{`{
+  "network":  "0G Mainnet",
+  "chainId":  16661,
+  "rpc":      "https://evmrpc.0g.ai",
+  "explorer": "https://chainscan.0g.ai"
+}`}</Code>
+        <H3>0G Galileo Testnet (chainId 16602)</H3>
+        <div className="my-6 border border-white/[0.08] overflow-x-auto">
+          <table className="w-full text-sm font-mono">
+            <thead>
+              <tr className="border-b border-white/[0.07]">
+                <th className="text-left px-5 py-3 text-white/30 font-normal">Contract</th>
+                <th className="text-left px-5 py-3 text-white/30 font-normal">Address</th>
+              </tr>
+            </thead>
+            <tbody>
+              {testnetDeployments.map((d) => (
+                <tr key={d.name} className="border-b border-white/[0.05] last:border-0">
+                  <td className="px-5 py-3 text-[#eca8d6]/75">{d.name}</td>
+                  <td className="px-5 py-3 text-white/45 break-all">{d.address}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <Code lang="json">{`{
   "network":  "0G Galileo Testnet",
   "chainId":  16602,
   "rpc":      "https://evmrpc-testnet.0g.ai",
   "explorer": "https://chainscan-galileo.0g.ai"
 }`}</Code>
+        <Callout type="tip">
+          Pass the <strong>PrivacyPoolProxy</strong> address to <code className="font-mono">StealthPaySDK</code>.
+          The implementation address is for verification only.
+        </Callout>
       </>
     ),
   },
@@ -1026,7 +1057,7 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
               ["Reviewer",    "AI-assisted static + circuit analysis"],
               ["Status",      "Pre-Mainnet Draft"],
               ["Scope",       "Smart contracts, ZK circuits, TypeScript SDK"],
-              ["Chain",       "0G Galileo Testnet (chainId 16602) · Mainnet-pending"],
+              ["Chain",       "0G Mainnet (chainId 16661) · 0G Galileo Testnet (chainId 16602)"],
             ].map(([k, v]) => (
               <div key={String(k)} className="flex gap-3">
                 <span className="text-white/25 font-mono shrink-0 w-28">{k}</span>
@@ -1107,22 +1138,22 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
 
         {/* ── Contract Inventory ── */}
         <H2>Contract Inventory</H2>
-        <P>All contracts deployed on 0G Galileo Testnet (chainId 16602), deployed 2026-04-21.</P>
+        <P>Contracts audited on 0G Galileo Testnet (chainId 16602), deployed 2026-04-21. Now also live on 0G Mainnet (chainId 16661), deployed 2026-05-11.</P>
         <div className="overflow-x-auto my-6">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-white/[0.08]">
                 <th className="text-left px-4 py-3 text-white/30 font-mono text-xs uppercase tracking-widest">Contract</th>
-                <th className="text-left px-4 py-3 text-white/30 font-mono text-xs uppercase tracking-widest">Address</th>
+                <th className="text-left px-4 py-3 text-white/30 font-mono text-xs uppercase tracking-widest">Mainnet Address</th>
                 <th className="text-left px-4 py-3 text-white/30 font-mono text-xs uppercase tracking-widest">Upgradeable</th>
               </tr>
             </thead>
             <tbody>
               {[
-                ["PrivacyPool (Proxy)",  "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1", "Yes — UUPS"],
-                ["PrivacyPool (Impl)",   "0x0c7aEF68936Da0c59c085d1F685dBBBf2509D9Db", "—"],
-                ["ShieldVerifier",       "0x89CD2172470C1aC071117Fe2085780DAA6e9656a", "No — immutable"],
-                ["SpendVerifier",        "0xe1E73e47CcbDB78f70A84E8757B51807E1D42386", "No — immutable"],
+                ["PrivacyPool (Proxy)",  "0x154d75521D449974d18c85600149b885DA5bBA85", "Yes — UUPS"],
+                ["PrivacyPool (Impl)",   "0x90AC4F119133559b37E4703E6ac30fFD4020c649", "—"],
+                ["ShieldVerifier",       "0x3F2Fd4E070a333446FF0D8886F513a0419A0BAF5", "No — immutable"],
+                ["SpendVerifier",        "0x190314E281C7f92bBe0945a4a059Fa74883F0B9C", "No — immutable"],
               ].map(([n, a, u]) => (
                 <tr key={String(n)} className="border-b border-white/[0.05] last:border-0">
                   <td className="px-4 py-3 font-mono text-[#eca8d6]/75 text-xs">{n}</td>
@@ -1601,13 +1632,13 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
         </div>
 
         {/* ── Recommendations ── */}
-        <H2>Pre-Mainnet Recommendations</H2>
+        <H2>Recommendations</H2>
         <ol className="space-y-3 my-6">
           {[
             "Transfer DEFAULT_ADMIN_ROLE and UPGRADER_ROLE to a multisig (minimum 3-of-5). Add a 48-hour timelock to all upgrade transactions.",
             "Consider capping emergencyWithdraw per-call or requiring a 24-hour delay via the timelock.",
             "Write Prover.toml to an OS temp directory with 0600 permissions and delete it immediately after witness generation.",
-            "Commission a formal third-party audit of the Solidity contracts and Noir circuits from a ZK-specialized firm before mainnet launch.",
+            "Commission a formal third-party audit of the Solidity contracts and Noir circuits from a ZK-specialized firm.",
             "Conduct a trusted setup ceremony or document the use of the UltraHonk universal SRS (no toxic waste per Barretenberg design).",
             "Add SDK documentation warning that spending proofs must be submitted promptly as they prove against the current Merkle root.",
             "Set up an on-chain monitoring service (e.g. Tenderly alerts) for NullifierAlreadySpent, InvalidZKProof, and EmergencyWithdrawal events.",
@@ -1631,11 +1662,11 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
         <P>
           The two medium findings (admin centralization and emergency withdraw) are intentional
           design choices that are standard in early-stage DeFi protocols and can be mitigated
-          with a multisig and timelock before mainnet. The low and informational findings are
+          with a multisig and timelock. The low and informational findings are
           improvement opportunities that do not compromise protocol correctness.
         </P>
         <Callout type="tip">
-          This report covers 7 smart contracts, 4 circuit files, and 9 SDK modules analyzed as of April 30, 2026. A formal third-party audit is strongly recommended before mainnet launch to validate these findings independently.
+          This report covers 7 smart contracts, 4 circuit files, and 9 SDK modules analyzed as of April 30, 2026. A formal third-party audit is strongly recommended to validate these findings independently.
         </Callout>
 
         <div className="mt-10 pt-8 border-t border-white/[0.07] flex flex-wrap items-center gap-x-8 gap-y-2 text-xs text-white/20 font-mono">

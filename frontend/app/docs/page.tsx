@@ -40,8 +40,8 @@ export default function DocsIntroPage() {
       </div>
 
       <Callout type="tip">
-        Stealth <span className="text-[#eca8d6]">Pay</span> is deployed on 0G Galileo testnet (chain ID 16602). The proxy address is{" "}
-        <code className="font-mono text-[#eca8d6]">0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1</code>.
+        Stealth <span className="text-[#eca8d6]">Pay</span> is live on <strong className="text-white/75">0G Mainnet</strong> (chain ID 16661). Proxy:{" "}
+        <code className="font-mono text-[#eca8d6]">0x154d75521D449974d18c85600149b885DA5bBA85</code>.
       </Callout>
 
       <h2 className="text-2xl font-display tracking-tight mt-12 mb-5 text-white">Quick start</h2>
@@ -66,7 +66,7 @@ export default function DocsIntroPage() {
       </div>
 
       <div className="mt-14 pt-8 border-t border-white/[0.07] flex items-center justify-between text-xs text-white/20 font-mono">
-        <span>Stealth <span className="text-[#eca8d6]">Pay</span> · 0G Galileo testnet</span>
+        <span>Stealth <span className="text-[#eca8d6]">Pay</span> · 0G Mainnet · chainId 16661</span>
         <a href="https://github.com" className="hover:text-white/45 transition-colors">Edit on GitHub ↗</a>
       </div>
     </>

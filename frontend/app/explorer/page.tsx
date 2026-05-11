@@ -18,7 +18,11 @@ const NETWORKS = {
     deployBlock:  28_000_000,
   },
   mainnet: {
-    label: "Mainnet", rpc: "", poolAddress: "", explorer: "", deployBlock: 0,
+    label:        "Mainnet",
+    rpc:          "https://evmrpc.0g.ai",
+    poolAddress:  "0x154d75521D449974d18c85600149b885DA5bBA85",
+    explorer:     "https://chainscan.0g.ai",
+    deployBlock:  32_910_000,
   },
 } as const;
 
@@ -220,21 +224,15 @@ export default function ExplorerPage() {
             </p>
           </div>
           <div className="flex items-center gap-1 border border-foreground/10 p-1 self-start sm:self-auto">
-            {(Object.keys(NETWORKS) as Network[]).map(n => {
-              const disabled = n === "mainnet";
-              return (
-                <button key={n} onClick={() => !disabled && setNetwork(n)} disabled={disabled}
-                  className={`px-4 py-1.5 text-xs font-mono tracking-wider uppercase transition-all relative ${
-                    network === n ? "bg-foreground text-background"
-                    : disabled   ? "text-foreground/20 cursor-not-allowed"
-                                 : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {disabled && <span className="absolute -top-2 -right-1 text-[9px] font-mono text-[#eca8d6]">soon</span>}
-                  {NETWORKS[n].label}
-                </button>
-              );
-            })}
+            {(Object.keys(NETWORKS) as Network[]).map(n => (
+              <button key={n} onClick={() => setNetwork(n)}
+                className={`px-4 py-1.5 text-xs font-mono tracking-wider uppercase transition-all ${
+                  network === n ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {NETWORKS[n].label}
+              </button>
+            ))}
           </div>
         </div>
 
