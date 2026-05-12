@@ -137,22 +137,18 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
           </div>
           <div className="flex items-center gap-5">
             <a
-              href="/playground"
-              className="text-sm text-white/35 hover:text-white/70 transition-colors font-mono"
-            >
-              Playground
-            </a>
-            <a
-              href="https://github.com"
+              href="https://github.com/sumithprabhu/Stealth-Pay"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-sm text-white/35 hover:text-white/70 transition-colors font-mono"
             >
               GitHub ↗
             </a>
             <a
-              href="/app"
+              href="/playground"
               className="text-sm font-mono border border-white/15 px-4 py-1.5 text-white/50 hover:text-white hover:border-white/30 transition-colors"
             >
-              Launch app
+              Launch playground
             </a>
           </div>
         </div>

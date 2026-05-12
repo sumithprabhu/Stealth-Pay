@@ -400,12 +400,12 @@ function RunPanel({ op, params, signerMode }: { op: Op; params: Params; signerMo
       </div>
 
       {/* Log stream */}
-      <div className="p-4 min-h-[100px] font-mono text-sm space-y-0.5">
+      <div className="p-4 min-h-[100px] font-mono text-sm space-y-0.5 overflow-x-hidden">
         {lines.length === 0 && state === "idle" && (
           <p className="text-white/30 text-xs">Press Run — a real transaction will be submitted on-chain.</p>
         )}
         {lines.map((l, i) => (
-          <p key={i} className={`leading-relaxed ${l.dim ? "text-white/45" : "text-white/85"}`}>{l.text}</p>
+          <p key={i} className={`leading-relaxed break-all ${l.dim ? "text-white/45" : "text-white/85"}`}>{l.text}</p>
         ))}
         {state === "running" && <span className="inline-block w-1.5 h-4 bg-[#eca8d6]/70 animate-pulse" />}
       </div>
@@ -459,7 +459,7 @@ export default function PlaygroundPage() {
   const returnType = RETURNS[op];
 
   return (
-    <div className="min-h-screen text-white" style={{ background: "oklch(0.06 0.008 260)" }}>
+    <div className="min-h-screen text-white overflow-x-hidden" style={{ background: "oklch(0.06 0.008 260)" }}>
 
       {/* Nav */}
       <header className="sticky top-0 z-50 border-b border-white/20 backdrop-blur-md"
@@ -475,7 +475,7 @@ export default function PlaygroundPage() {
           </div>
           <div className="flex items-center gap-5">
             <Link href="/docs" className="text-sm text-white/55 hover:text-white/85 transition-colors font-mono">Docs</Link>
-            <a href="https://github.com" className="text-sm text-white/55 hover:text-white/85 transition-colors font-mono">GitHub ↗</a>
+            <a href="https://github.com/sumithprabhu/Stealth-Pay" target="_blank" rel="noopener noreferrer" className="text-sm text-white/55 hover:text-white/85 transition-colors font-mono">GitHub ↗</a>
           </div>
         </div>
       </header>
@@ -518,7 +518,7 @@ export default function PlaygroundPage() {
         <div className="grid lg:grid-cols-12 gap-5 mb-5">
 
           {/* Left: controls */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-4 min-w-0">
 
             {/* Signer mode */}
             <div className="border border-white/20 p-4 space-y-4">
@@ -602,7 +602,7 @@ export default function PlaygroundPage() {
           </div>
 
           {/* Middle: live call */}
-          <div className="lg:col-span-4 flex flex-col">
+          <div className="lg:col-span-4 flex flex-col min-w-0">
             <div className="border border-[#eca8d6]/40 bg-[#eca8d6]/[0.03] flex flex-col flex-1">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[#eca8d6]/25">
                 <span className="text-xs font-mono text-[#eca8d6]/70 uppercase tracking-widest">Live SDK call</span>
@@ -623,7 +623,7 @@ export default function PlaygroundPage() {
           </div>
 
           {/* Right: return type */}
-          <div className="lg:col-span-4">
+          <div className="lg:col-span-4 min-w-0">
             <div className="border border-white/20 h-full">
               <div className="px-4 py-3 border-b border-white/15 bg-white/[0.03] flex items-center gap-3">
                 <span className="text-xs font-mono text-white/60 uppercase tracking-widest">Returns</span>
