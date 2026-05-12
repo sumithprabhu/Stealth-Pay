@@ -1,10 +1,6 @@
 <div align="center">
-  <img src="frontend/public/logo.png" width="72" alt="StealthPay logo" /><br/><br/>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/wordmark-dark.svg">
-    <img src=".github/wordmark-light.svg" width="240" alt="StealthPay" />
-  </picture>
-  <p>A privacy layer for 0G Chain — private token transfers with Zero-Knowledge proofs.</p>
+  <img src="frontend/public/logo.png" height="48" alt="" />&nbsp;&nbsp;<picture><source media="(prefers-color-scheme: dark)" srcset=".github/wordmark-dark.svg"><img src=".github/wordmark-light.svg" height="48" alt="Stealth Pay" /></picture>
+  <p>A privacy layer for 0G Chain. Private token transfers with Zero-Knowledge proofs.</p>
 </div>
 
 ---
