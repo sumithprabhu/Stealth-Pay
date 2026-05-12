@@ -56,6 +56,12 @@ const sections = [
       { slug: "ai-security-report", label: "AI Security Report" },
     ],
   },
+  {
+    group: "Compliance",
+    items: [
+      { slug: "compliance", label: "Compliance & Regulation" },
+    ],
+  },
 ];
 
 function Sidebar() {

@@ -1045,7 +1045,7 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
     eyebrow: "Security",
     title: "AI Security Report",
     prev: { href: "/docs/circuits-poseidon", label: "Poseidon2 hash" },
-    next: undefined,
+    next: { href: "/docs/compliance", label: "Compliance & Regulation" },
     content: (
       <>
         {/* ── Header block ── */}
@@ -1676,6 +1676,127 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
           <span>Test cases: 18</span>
           <span>Critical: 0 · High: 0 · Medium: 2 · Low/Info: 5</span>
         </div>
+      </>
+    ),
+  },
+  // ── Compliance & Regulation ───────────────────────────────────────────────
+  "compliance": {
+    eyebrow: "Compliance & Regulation",
+    title: "Compliance & Regulation",
+    prev: { href: "/docs/ai-security-report", label: "AI Security Report" },
+    next: undefined,
+    content: (
+      <>
+        <Callout type="warn">
+          This page reflects our current understanding of the regulatory landscape as of mid-2026. It is not legal advice. If you are operating in a regulated jurisdiction, consult a qualified attorney.
+        </Callout>
+
+        <H2>Our honest position</H2>
+        <P>
+          Stealth <span className="text-[#eca8d6]">Pay</span> is a privacy protocol. Privacy and compliance are not opposites, but we will not pretend the tension doesn't exist. This page explains what we have built in, what we have not, and why.
+        </P>
+
+        <H2>What is built into the protocol</H2>
+
+        <H3>Permissioned token list</H3>
+        <P>
+          Only tokens explicitly whitelisted by the <code className="font-mono text-white/60">OPERATOR_ROLE</code> can be shielded. The operator can delist a token at any time. This means if a token is associated with a sanctioned issuer or flagged by regulators, it can be removed from the pool without a contract upgrade.
+        </P>
+
+        <H3>Shield and unshield are visible on-chain</H3>
+        <P>
+          When you shield tokens, the chain records the depositor address, token, and amount. When you unshield, the chain records the recipient address, token, and amount. Only the <em>link</em> between a specific shield and a specific unshield is hidden. Blockchain analytics firms can and do apply heuristics to privacy pools — we do not claim otherwise.
+        </P>
+
+        <H3>Admin emergency controls</H3>
+        <P>
+          The contract has a <code className="font-mono text-white/60">pause()</code> function and an <code className="font-mono text-white/60">emergencyWithdraw()</code> function restricted to admin roles. In the event of a regulatory order or exploit, the protocol can be frozen and funds can be returned. This is a deliberate design choice that introduces admin trust — documented honestly in the <a href="/docs/ai-security-report" className="text-[#eca8d6]/80 hover:text-[#eca8d6] transition-colors">Security Report</a>.
+        </P>
+
+        <H3>Upgradeable contracts</H3>
+        <P>
+          The <code className="font-mono text-white/60">PrivacyPool</code> proxy is UUPS upgradeable. If regulators require compliance changes — for example, mandatory on-chain screening or modified withdrawal flows — we can respond without redeploying. This is a trade-off: upgradeability means users must trust the upgrade key holder.
+        </P>
+
+        <H2>What is not built in</H2>
+
+        <H3>OFAC screening</H3>
+        <P>
+          There is no on-chain OFAC or sanctions list check at the smart contract level. The contract does not block deposits or withdrawals from specific addresses. Implementing this on-chain is technically complex, privacy-reducing, and not yet a settled legal requirement for non-custodial protocols. We are watching how courts and regulators rule on this.
+        </P>
+
+        <H3>Travel Rule compliance</H3>
+        <P>
+          Private transfers between spending keys do not record the sender or receiver on-chain. The Travel Rule (FATF Recommendation 16) applies to virtual asset service providers, not to self-custodied protocol use. If you are a VASP integrating Stealth Pay, you are responsible for your own Travel Rule obligations at the application layer.
+        </P>
+
+        <H3>KYC / identity</H3>
+        <P>
+          The protocol has no identity layer. Anyone with a wallet and whitelisted tokens can use it. We do not think a KYC layer belongs at the base protocol level — that is an application concern.
+        </P>
+
+        <H2>Regulatory landscape</H2>
+        <P>
+          As of 2026, there is no settled global framework for on-chain privacy protocols. The most relevant precedent is the OFAC sanctioning of Tornado Cash smart contract addresses in August 2022 and the subsequent criminal prosecution of its developers. Key points from that case that inform our design:
+        </P>
+        <div className="space-y-3 my-6">
+          {[
+            "OFAC sanctioned specific immutable contract addresses, not the concept of privacy. The legal theory was that the contracts themselves were \"property\" of a sanctioned entity (Lazarus Group) because North Korean hackers had used them extensively.",
+            "The Fifth Circuit partially overturned the immutable pool sanctions in November 2024, ruling that immutable smart contracts are not \"property\" under IEEPA. The mutable contracts and the Tornado Cash DAO token remained sanctioned.",
+            "The developer prosecutions proceeded separately under money transmission and sanctions violation charges, not purely for writing privacy software.",
+          ].map((item, i) => (
+            <div key={i} className="flex items-start gap-3 text-sm text-white/55">
+              <span className="shrink-0 w-5 h-5 flex items-center justify-center border border-white/[0.1] text-white/25 text-xs mt-0.5 font-mono">{i + 1}</span>
+              {item}
+            </div>
+          ))}
+        </div>
+
+        <H2>How we differ from Tornado Cash</H2>
+        <P>
+          This is the question most people actually want answered. Here is a direct comparison.
+        </P>
+        <div className="my-8 border border-white/[0.08] overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/[0.07]">
+                <th className="text-left px-5 py-3 text-white/30 font-mono text-xs uppercase tracking-widest w-[38%]"></th>
+                <th className="text-left px-5 py-3 text-white/30 font-mono text-xs uppercase tracking-widest">Tornado Cash</th>
+                <th className="text-left px-5 py-3 text-[#eca8d6]/40 font-mono text-xs uppercase tracking-widest">Stealth Pay</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ["Model",              "Fixed-denomination mixer. Deposits are fungible — 1 ETH from any depositor is indistinguishable from any other.", "UTXO note model. Private transfers create individual note paths. Not a mixer."],
+                ["Token list",         "Any ERC-20, no restrictions.",                                    "Operator-controlled whitelist. Tokens can be delisted."],
+                ["Admin controls",     "Immutable contracts. No admin. No pause. No emergency withdraw.",  "Upgradeable (UUPS). Admin can pause and emergency-withdraw."],
+                ["Chain",              "Ethereum mainnet — directly subject to US regulatory jurisdiction.", "0G Chain — a separate EVM L1. Different regulatory exposure."],
+                ["Sanctioned use",     "Lazarus Group (North Korea) laundered ~$455M through it, making every pool deposit commingled with sanctioned funds.", "Not sanctioned. No known use by sanctioned entities."],
+                ["Developer posture",  "Developers operated anonymously, marketed it as a censorship-resistant mixer.", "Open team, open source, this compliance page exists."],
+                ["Regulatory response capability", "None — immutable.",                                   "Can pause, delist tokens, upgrade logic, or comply with a court order."],
+                ["Fifth Circuit ruling", "Partially applies — immutable pool contracts ruled not \"property\".", "Not subject to the Tornado Cash sanctions."],
+              ].map(([prop, tc, sp]) => (
+                <tr key={String(prop)} className="border-b border-white/[0.05] last:border-0 align-top">
+                  <td className="px-5 py-4 text-white/50 text-xs font-medium">{prop}</td>
+                  <td className="px-5 py-4 text-white/35 text-xs leading-relaxed">{tc}</td>
+                  <td className="px-5 py-4 text-white/60 text-xs leading-relaxed">{sp}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Callout type="info">
+          The core privacy mechanism (ZK proofs hiding the shield-to-unshield link) is the same class of technology used by Zcash, which has operated without sanctions since 2016. The UTXO note model is closer to Zcash sapling than to Tornado Cash.
+        </Callout>
+
+        <H2>What we cannot promise</H2>
+        <P>
+          We cannot guarantee that regulators in any jurisdiction will not take action against this protocol or its users. Privacy technology is under active legal scrutiny worldwide. If you are transacting in large amounts or in jurisdictions with strict crypto regulation, you should take legal advice specific to your situation.
+        </P>
+        <P>
+          What we can say: we have built a protocol that can respond to regulatory requirements, we have not designed it to be ungovernable, and we are not trying to help anyone launder money.
+        </P>
       </>
     ),
   },
