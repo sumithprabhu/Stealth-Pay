@@ -7,30 +7,28 @@ const footerLinks = {
     { name: "Features", href: "#features" },
     { name: "How it works", href: "#how-it-works" },
     { name: "Security", href: "#security" },
-    { name: "Contracts", href: "/docs/contracts" },
+    { name: "Contracts", href: "/docs/contracts-overview" },
   ],
   Developers: [
     { name: "Documentation", href: "/docs" },
-    { name: "TypeScript SDK", href: "/docs/sdk" },
-    { name: "Circuit reference", href: "/docs/circuits" },
-    { name: "GitHub", href: "https://github.com", external: true },
+    { name: "TypeScript SDK", href: "/docs/sdk-install" },
+    { name: "Circuit reference", href: "/docs/circuits-shield" },
+    { name: "GitHub", href: "https://github.com/sumithprabhu/Stealth-Pay", external: true },
   ],
   Community: [
-    { name: "Twitter", href: "https://twitter.com", external: true },
+    { name: "Twitter", href: "https://x.com/stealth_pay", external: true },
     { name: "Discord", href: "#", badge: "Coming soon" },
-    { name: "Blog", href: "#" },
   ],
   Legal: [
-    { name: "Privacy", href: "#" },
-    { name: "Terms", href: "#" },
-    { name: "Security disclosure", href: "#security" },
+    { name: "Privacy", href: "/privacy" },
+    { name: "Terms", href: "/terms" },
+    { name: "Security disclosure", href: "/security" },
   ],
 };
 
 const socialLinks = [
-  { name: "Twitter", href: "https://twitter.com" },
-  { name: "GitHub", href: "https://github.com" },
-  { name: "Discord", href: "#" },
+  { name: "Twitter", href: "https://x.com/stealth_pay" },
+  { name: "GitHub", href: "https://github.com/sumithprabhu/Stealth-Pay" },
 ];
 
 export function FooterSection() {

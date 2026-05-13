@@ -78,8 +78,8 @@ export function HowItWorksSection() {
               }`}
             >
               <span className="block">Shield.</span>
-              <span className="block text-white/30">Transfer.</span>
-              <span className="block text-white/10">Unshield.</span>
+              <span className="block text-white/60">Transfer.</span>
+              <span className="block text-white/35">Unshield.</span>
             </h2>
           </div>
 
