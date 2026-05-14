@@ -43,6 +43,39 @@ const POOL_ABI = [
 // Fund this address with OG testnet tokens so it can pay for recordHint txs.
 const RELAY_PRIVATE_KEY = process.env.RELAY_PRIVATE_KEY;
 
+// ── Local hint store (primary fallback when 0G Storage is unavailable) ────────
+// Key: hex spending pubkey hash → Value: HintPayload[]
+// In-memory; survives for the lifetime of this process (sufficient for demo sessions).
+const localHintStore = new Map();
+
+function localStoreKey(spendingPrivkey) {
+  const { pubkey } = deriveEncryptionKeypair(spendingPrivkey);
+  return ethers.keccak256(pubkey);
+}
+
+function saveHintLocally(spendingPrivkey, payload) {
+  const key = localStoreKey(spendingPrivkey);
+  const existing = localHintStore.get(key) ?? [];
+  existing.push(payload);
+  localHintStore.set(key, existing);
+}
+
+function getLocalHints(spendingPrivkey) {
+  return localHintStore.get(localStoreKey(spendingPrivkey)) ?? [];
+}
+
+// ── Retry helper ──────────────────────────────────────────────────────────────
+async function withRetry(fn, retries = 3, delayMs = 3000) {
+  let lastErr;
+  for (let i = 0; i < retries; i++) {
+    try { return await fn(); } catch (e) {
+      lastErr = e;
+      if (i < retries - 1) await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 // ── SSE helper ────────────────────────────────────────────────────────────────
 function sse(res) {
   res.setHeader("Content-Type", "text/event-stream");
@@ -56,23 +89,31 @@ function toCommitmentHex(commitment) {
   return "0x" + commitment.toString(16).padStart(64, "0");
 }
 
-// Post a note hint to 0G Storage + on-chain so the owner can rediscover it later.
+// Post a note hint — saves locally (reliable) then tries 0G Storage (best-effort).
 async function postShieldHint(signer, spendingPrivkey, { commitment, token, amount, salt }) {
-  const { pubkey: myEncPubkey } = deriveEncryptionKeypair(spendingPrivkey);
-  const pool = new ethers.Contract(POOL_ADDRESS, POOL_ABI, signer);
-  await postHint({
-    signer,
-    poolContract: pool,
-    receiverEncPubkey: myEncPubkey,
-    payload: {
-      commitment: toCommitmentHex(commitment),
-      token,
-      amount: amount.toString(),
-      salt:   salt.toString(),
-    },
-    indexerRpc: ZG_INDEXER_RPC,
-    rpc:        ZG_RPC,
-  });
+  const payload = {
+    commitment: toCommitmentHex(commitment),
+    token,
+    amount: amount.toString(),
+    salt:   salt.toString(),
+  };
+
+  // Always save locally first — this is what sync will use if 0G Storage is down.
+  saveHintLocally(spendingPrivkey, payload);
+
+  // Best-effort: also push to 0G Storage so other nodes / future sessions can find it.
+  if (signer) {
+    const { pubkey: myEncPubkey } = deriveEncryptionKeypair(spendingPrivkey);
+    const pool = new ethers.Contract(POOL_ADDRESS, POOL_ABI, signer);
+    await withRetry(() => postHint({
+      signer,
+      poolContract: pool,
+      receiverEncPubkey: myEncPubkey,
+      payload,
+      indexerRpc: ZG_INDEXER_RPC,
+      rpc:        ZG_RPC,
+    }));
+  }
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────
@@ -115,19 +156,17 @@ app.post("/prove", async (req, res) => {
         salt,
       });
 
-      // Save note hint to 0G Storage so this note can be found on the next sync.
-      // Uses a relay signer because the user's wallet is not available server-side.
-      if (RELAY_PRIVATE_KEY) {
-        send({ step: "hint", msg: "Saving note hint to 0G Storage…" });
-        try {
-          const relaySigner = new ethers.Wallet(RELAY_PRIVATE_KEY, new ethers.JsonRpcProvider(ZG_RPC));
-          await postShieldHint(relaySigner, privkey, { commitment, token, amount: amt, salt });
-          send({ step: "hint", msg: "✓ Note hint saved — private send will work after this shields" });
-        } catch (e) {
-          send({ step: "hint", msg: `Note hint skipped: ${e?.message ?? e}` });
-        }
-      } else {
-        send({ step: "hint", msg: "⚠ RELAY_PRIVATE_KEY not set — note hint not saved. Private send will fail until set." });
+      // Save note hint locally (always) + push to 0G Storage (best-effort via relay signer).
+      send({ step: "hint", msg: "Saving note hint…" });
+      try {
+        const relaySigner = RELAY_PRIVATE_KEY
+          ? new ethers.Wallet(RELAY_PRIVATE_KEY, new ethers.JsonRpcProvider(ZG_RPC))
+          : null;
+        await postShieldHint(relaySigner, privkey, { commitment, token, amount: amt, salt });
+        send({ step: "hint", msg: "✓ Note hint saved — private send will find this note" });
+      } catch (e) {
+        // Local save already happened inside postShieldHint before the 0G upload attempt.
+        send({ step: "hint", msg: `Note hint saved locally (0G Storage unavailable: ${e?.message ?? e})` });
       }
 
       send({
@@ -158,6 +197,16 @@ app.post("/prove", async (req, res) => {
 
       send({ step: "sync", msg: "Syncing Merkle tree to find your notes…" });
       await sdk.sync(provider, 0);
+
+      // Inject any locally-stored hints (covers the case where 0G Storage was unavailable during shield).
+      for (const h of getLocalHints(privkey)) {
+        const commitment = BigInt(h.commitment);
+        if (sdk.noteManager.getNote(commitment)) continue;
+        const leafIndex = sdk.noteManager.findLeafIndex(commitment);
+        if (leafIndex !== undefined) {
+          sdk.noteManager.trackNote(commitment, h.token, BigInt(h.amount), BigInt(h.salt), leafIndex);
+        }
+      }
 
       const notes = sdk.getNotes(token);
       send({
@@ -323,6 +372,16 @@ app.post("/execute", async (req, res) => {
 
       send({ step: "sync", msg: "Syncing Merkle tree…" });
       await sdk.sync(provider, 0);
+
+      for (const h of getLocalHints(privkey)) {
+        const commitment = BigInt(h.commitment);
+        if (sdk.noteManager.getNote(commitment)) continue;
+        const leafIndex = sdk.noteManager.findLeafIndex(commitment);
+        if (leafIndex !== undefined) {
+          sdk.noteManager.trackNote(commitment, h.token, BigInt(h.amount), BigInt(h.salt), leafIndex);
+        }
+      }
+
       const notes = sdk.getNotes(token);
       send({ step: "sync", msg: `Tree synced — ${notes.length} unspent note(s)` });
 
