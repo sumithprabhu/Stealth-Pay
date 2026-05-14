@@ -1,6 +1,7 @@
-const express = require("express");
-const cors    = require("cors");
-const ethers  = require("ethers");
+const express  = require("express");
+const cors     = require("cors");
+const ethers   = require("ethers");
+const mongoose = require("mongoose");
 const {
   StealthPaySDK,
   NoteManager,
@@ -20,7 +21,47 @@ app.use(express.json());
 
 const RPC_URL      = "https://evmrpc-testnet.0g.ai";
 const POOL_ADDRESS = "0x87fECd1AfA436490e3230C8B0B5aD49dcC1283F1";
+const MOCK_TOKEN   = "0xB4fd61544493a27a4793F161d6BE153d1A0f6092";
 const BN254        = BigInt("21888242871839275222246405745257275088548364400416034343698204186575808495617");
+
+// ── MongoDB ───────────────────────────────────────────────────────────────────
+if (process.env.MONGO_URI) {
+  mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log("MongoDB connected"))
+    .catch(e => console.error("MongoDB error:", e.message));
+}
+
+const PaymentSchema = new mongoose.Schema({
+  to:        String,
+  amount:    String,
+  txHash:    String,
+  timestamp: { type: Date, default: Date.now },
+});
+const Payment = mongoose.model("Payment", PaymentSchema);
+
+// ── V1 Payroll — hardcoded org + employees ────────────────────────────────────
+const ORG_PRIVKEY = BigInt(ethers.keccak256(ethers.toUtf8Bytes("stealthcorp-v1-2024"))) % BN254;
+const ORG_PUBKEY  = deriveSpendingPubkey(ORG_PRIVKEY);
+
+const EMPLOYEES = [
+  { id: "alice", name: "Alice Chen",  role: "Engineering", color: "#a78bfa", salary: 100_000_000n },
+  { id: "bob",   name: "Bob Kim",     role: "Design",      color: "#34d399", salary: 100_000_000n },
+  { id: "carol", name: "Carol Patel", role: "Marketing",   color: "#fb923c", salary: 100_000_000n },
+].map(e => {
+  const privkey = BigInt(ethers.keccak256(ethers.toUtf8Bytes(`employee-${e.id}-v1-2024`))) % BN254;
+  return { ...e, spendingPrivkey: privkey, spendingPubkey: deriveSpendingPubkey(privkey).toString() };
+});
+
+function injectLocalHints(sdk, privkey, token) {
+  for (const h of getLocalHints(privkey)) {
+    const commitment = BigInt(h.commitment);
+    if (sdk.noteManager.getNote(commitment)) continue;
+    const leafIndex = sdk.noteManager.findLeafIndex(commitment);
+    if (leafIndex !== undefined) {
+      sdk.noteManager.trackNote(commitment, h.token ?? token, BigInt(h.amount), BigInt(h.salt), leafIndex);
+    }
+  }
+}
 
 const ZG_STORAGE_CONFIG = { indexerRpc: ZG_INDEXER_RPC, rpc: ZG_RPC };
 
@@ -417,6 +458,221 @@ app.post("/execute", async (req, res) => {
     send({ step: "error", msg: err?.message ?? String(err) });
   }
 
+  res.end();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V1 Payroll Demo Routes
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /v1/employees — return employee list + recent payments
+app.get("/v1/employees", async (_req, res) => {
+  try {
+    const payments = process.env.MONGO_URI
+      ? await Payment.find().sort({ timestamp: -1 }).limit(20).lean()
+      : [];
+    res.json({
+      employees: EMPLOYEES.map(e => ({
+        id: e.id, name: e.name, role: e.role,
+        color: e.color, salary: e.salary.toString(),
+        spendingPubkey: e.spendingPubkey,
+      })),
+      payments,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+// POST /v1/org/shield — org shields USDC into the private pool (SSE)
+app.post("/v1/org/shield", async (req, res) => {
+  const send = sse(res);
+  const { amount } = req.body;
+  if (!process.env.DEPLOYER_PRIVATE_KEY) {
+    send({ step: "error", msg: "DEPLOYER_PRIVATE_KEY not set on server" });
+    return res.end();
+  }
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const signer   = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+    const amt      = BigInt(amount || "300000000");
+
+    send({ step: "prove", msg: "Generating ZK proof for shield… (30–60 s)" });
+    const salt = BigInt(ethers.hexlify(ethers.randomBytes(32))) % BN254;
+    const { proof, commitment } = await generateShieldProof({
+      spendingPrivkey: ORG_PRIVKEY, token: MOCK_TOKEN, amount: amt, salt,
+    });
+
+    const erc20   = new ethers.Contract(MOCK_TOKEN, ERC20_ABI, signer);
+    const addr    = await signer.getAddress();
+    const allow   = await erc20.allowance(addr, POOL_ADDRESS);
+    if (BigInt(allow) < amt) {
+      send({ step: "approve", msg: "Approving token spend…" });
+      await (await erc20.approve(POOL_ADDRESS, amt)).wait();
+    }
+
+    send({ step: "submit", msg: "Submitting shield transaction…" });
+    const pool    = new ethers.Contract(POOL_ADDRESS, POOL_ABI, signer);
+    const receipt = await (await pool.shield(
+      { token: MOCK_TOKEN, amount: amt, commitment: toCommitmentHex(commitment) },
+      ethers.hexlify(proof),
+    )).wait();
+
+    saveHintLocally(ORG_PRIVKEY, {
+      commitment: toCommitmentHex(commitment),
+      token: MOCK_TOKEN, amount: amt.toString(), salt: salt.toString(),
+    });
+
+    send({
+      step: "done", txHash: receipt.hash,
+      explorer: `https://chainscan-galileo.0g.ai/tx/${receipt.hash}`,
+      amount: ethers.formatUnits(amt, 6) + " USDC shielded into pool",
+    });
+  } catch (err) {
+    send({ step: "error", msg: err?.message ?? String(err) });
+  }
+  res.end();
+});
+
+// POST /v1/org/balance — get org's current shielded pool balance
+app.post("/v1/org/balance", async (_req, res) => {
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const dummy    = ethers.Wallet.createRandom().connect(provider);
+    const sdk      = new StealthPaySDK({
+      signer: dummy, privacyPoolAddress: POOL_ADDRESS,
+      spendingPrivkey: ORG_PRIVKEY, confirmTimeoutMs: 60_000,
+      zeroGStorage: ZG_STORAGE_CONFIG,
+    });
+    await sdk.sync(provider, 0);
+    injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
+    const notes   = sdk.getNotes(MOCK_TOKEN);
+    const balance = notes.reduce((a, n) => a + n.amount, 0n);
+    res.json({ balance: ethers.formatUnits(balance, 6), noteCount: notes.length });
+  } catch (err) {
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+// POST /v1/pay — org pays an employee via privateSend (SSE)
+app.post("/v1/pay", async (req, res) => {
+  const send = sse(res);
+  const { employeeId, amount } = req.body;
+  if (!process.env.DEPLOYER_PRIVATE_KEY) {
+    send({ step: "error", msg: "DEPLOYER_PRIVATE_KEY not set on server" });
+    return res.end();
+  }
+  const employee = EMPLOYEES.find(e => e.id === employeeId);
+  if (!employee) { send({ step: "error", msg: "Employee not found" }); return res.end(); }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const signer   = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+    const amt      = BigInt(amount ?? employee.salary);
+
+    const sdk = new StealthPaySDK({
+      signer, privacyPoolAddress: POOL_ADDRESS,
+      spendingPrivkey: ORG_PRIVKEY, confirmTimeoutMs: 180_000,
+      zeroGStorage: ZG_STORAGE_CONFIG,
+    });
+
+    send({ step: "sync", msg: "Syncing org pool balance…" });
+    await sdk.sync(provider, 0);
+    injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
+
+    const notes   = sdk.getNotes(MOCK_TOKEN);
+    const balance = notes.reduce((a, n) => a + n.amount, 0n);
+    send({ step: "sync", msg: `Pool balance: ${ethers.formatUnits(balance, 6)} USDC` });
+
+    send({ step: "prove", msg: `Generating ZK proof for payment to ${employee.name}… (30–60 s)` });
+    const result = await sdk.privateSend(MOCK_TOKEN, amt, BigInt(employee.spendingPubkey));
+
+    if (process.env.MONGO_URI) {
+      await Payment.create({ to: employee.name, amount: ethers.formatUnits(amt, 6) + " USDC", txHash: result.txHash });
+    }
+
+    send({
+      step: "done", to: employee.name,
+      txHash: result.txHash,
+      explorer: `https://chainscan-galileo.0g.ai/tx/${result.txHash}`,
+      amount: ethers.formatUnits(amt, 6) + " USDC",
+    });
+  } catch (err) {
+    send({ step: "error", msg: err?.message ?? String(err) });
+  }
+  res.end();
+});
+
+// POST /v1/balance — get an employee's private balance (password gated)
+app.post("/v1/balance", async (req, res) => {
+  const { employeeId, password } = req.body;
+  if (password !== "123456") return res.status(401).json({ error: "Wrong password" });
+  const employee = EMPLOYEES.find(e => e.id === employeeId);
+  if (!employee) return res.status(404).json({ error: "Employee not found" });
+
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const dummy    = ethers.Wallet.createRandom().connect(provider);
+    const sdk      = new StealthPaySDK({
+      signer: dummy, privacyPoolAddress: POOL_ADDRESS,
+      spendingPrivkey: employee.spendingPrivkey, confirmTimeoutMs: 60_000,
+      zeroGStorage: ZG_STORAGE_CONFIG,
+    });
+    await sdk.sync(provider, 0);
+    injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
+    const notes   = sdk.getNotes(MOCK_TOKEN);
+    const balance = notes.reduce((a, n) => a + n.amount, 0n);
+    res.json({ balance: ethers.formatUnits(balance, 6), noteCount: notes.length });
+  } catch (err) {
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+// POST /v1/withdraw — employee withdraws to a wallet address (SSE, password gated)
+app.post("/v1/withdraw", async (req, res) => {
+  const send = sse(res);
+  const { employeeId, password, recipient, amount } = req.body;
+  if (password !== "123456") { send({ step: "error", msg: "Wrong password" }); return res.end(); }
+  if (!process.env.DEPLOYER_PRIVATE_KEY) {
+    send({ step: "error", msg: "DEPLOYER_PRIVATE_KEY not set on server" });
+    return res.end();
+  }
+  const employee = EMPLOYEES.find(e => e.id === employeeId);
+  if (!employee) { send({ step: "error", msg: "Employee not found" }); return res.end(); }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const signer   = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+
+    const sdk = new StealthPaySDK({
+      signer, privacyPoolAddress: POOL_ADDRESS,
+      spendingPrivkey: employee.spendingPrivkey, confirmTimeoutMs: 180_000,
+      zeroGStorage: ZG_STORAGE_CONFIG,
+    });
+
+    send({ step: "sync", msg: `Syncing ${employee.name}'s private balance…` });
+    await sdk.sync(provider, 0);
+    injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
+
+    const notes   = sdk.getNotes(MOCK_TOKEN);
+    const balance = notes.reduce((a, n) => a + n.amount, 0n);
+    const amt     = amount ? BigInt(amount) : balance;
+    send({ step: "sync", msg: `Private balance: ${ethers.formatUnits(balance, 6)} USDC` });
+
+    if (balance === 0n) throw new Error("No balance to withdraw");
+
+    send({ step: "prove", msg: "Generating ZK proof for withdrawal… (30–60 s)" });
+    const result = await sdk.unshield(MOCK_TOKEN, amt, recipient);
+
+    send({
+      step: "done", txHash: result.txHash,
+      explorer: `https://chainscan-galileo.0g.ai/tx/${result.txHash}`,
+      amount: ethers.formatUnits(amt, 6) + " USDC",
+      recipient,
+    });
+  } catch (err) {
+    send({ step: "error", msg: err?.message ?? String(err) });
+  }
   res.end();
 });
 
