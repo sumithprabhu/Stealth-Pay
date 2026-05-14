@@ -80,9 +80,10 @@ const POOL_ABI = [
   "event NoteHint(bytes32 indexed receiverPubkeyHash, bytes32 storageRoot)",
 ];
 
-// Relay signer used to post hints in wallet mode (no user signer available server-side).
-// Fund this address with OG testnet tokens so it can pay for recordHint txs.
-const RELAY_PRIVATE_KEY = process.env.RELAY_PRIVATE_KEY;
+// Backend signer key — used for v1 payroll txs and hint posting.
+// Falls back to RELAY_PRIVATE_KEY if DEPLOYER_PRIVATE_KEY is not set.
+const RELAY_PRIVATE_KEY   = process.env.RELAY_PRIVATE_KEY;
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY ?? process.env.RELAY_PRIVATE_KEY;
 
 // ── Local hint store (primary fallback when 0G Storage is unavailable) ────────
 // Key: hex spending pubkey hash → Value: HintPayload[]
@@ -465,6 +466,220 @@ app.post("/execute", async (req, res) => {
 // V1 Payroll Demo Routes
 // ─────────────────────────────────────────────────────────────────────────────
 
+// POST /v1/prove/shield — generate shield proof for org (wallet mode, no signer needed)
+app.post("/v1/prove/shield", async (req, res) => {
+  const send = sse(res);
+  const { amount } = req.body;
+  try {
+    const amt  = BigInt(amount || "300000000");
+    const salt = BigInt(ethers.hexlify(ethers.randomBytes(32))) % BN254;
+
+    send({ step: "prove", msg: "Generating ZK proof for shield… (30–60 s)" });
+    const { proof, commitment } = await generateShieldProof({
+      spendingPrivkey: ORG_PRIVKEY, token: MOCK_TOKEN, amount: amt, salt,
+    });
+
+    // Save hint locally so future pay/withdraw syncs find this note
+    saveHintLocally(ORG_PRIVKEY, {
+      commitment: toCommitmentHex(commitment),
+      token: MOCK_TOKEN, amount: amt.toString(), salt: salt.toString(),
+    });
+
+    send({
+      step: "done",
+      proof: ethers.hexlify(proof),
+      params: { token: MOCK_TOKEN, amount: amt.toString(), commitment: toCommitmentHex(commitment) },
+    });
+  } catch (err) {
+    send({ step: "error", msg: err?.message ?? String(err) });
+  }
+  res.end();
+});
+
+// POST /v1/prove/pay — generate spend proof for paying an employee (wallet mode)
+app.post("/v1/prove/pay", async (req, res) => {
+  const send = sse(res);
+  const { employeeId, amount } = req.body;
+  const employee = EMPLOYEES.find(e => e.id === employeeId);
+  if (!employee) { send({ step: "error", msg: "Employee not found" }); return res.end(); }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const dummy    = ethers.Wallet.createRandom().connect(provider);
+    const amt      = BigInt(amount ?? employee.salary);
+
+    const sdk = new StealthPaySDK({
+      signer: dummy, privacyPoolAddress: POOL_ADDRESS,
+      spendingPrivkey: ORG_PRIVKEY, confirmTimeoutMs: 60_000,
+      zeroGStorage: ZG_STORAGE_CONFIG,
+    });
+
+    send({ step: "sync", msg: "Syncing org pool balance…" });
+    await sdk.sync(provider, 0);
+    injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
+
+    const notes   = sdk.getNotes(MOCK_TOKEN);
+    const balance = notes.reduce((a, n) => a + n.amount, 0n);
+    send({ step: "sync", msg: `Pool balance: ${ethers.formatUnits(balance, 6)} USDC` });
+    if (notes.length === 0) throw new Error("No pool balance — shield USDC first");
+
+    send({ step: "prove", msg: `Generating ZK proof for payment to ${employee.name}… (30–60 s)` });
+
+    const unspent  = notes.sort((a, b) => (a.amount < b.amount ? -1 : 1));
+    const selected = [];
+    let total = 0n;
+    for (const n of unspent) {
+      if (total >= amt) break;
+      selected.push(n);
+      total += n.amount;
+      if (selected.length === 2) break;
+    }
+    if (total < amt) throw new Error(`Insufficient balance: have ${ethers.formatUnits(total, 6)}, need ${ethers.formatUnits(amt, 6)} USDC`);
+
+    const change       = total - amt;
+    const merkleRoot   = sdk.noteManager.getCurrentRoot();
+    const changePubkey = deriveSpendingPubkey(ORG_PRIVKEY);
+    const randSalt     = () => BigInt(ethers.hexlify(ethers.randomBytes(32))) % BN254;
+    const recvSalt     = randSalt();
+    const chgSalt      = randSalt();
+
+    const outputNotes = [
+      { receiverPubkey: BigInt(employee.spendingPubkey), amount: amt,    salt: recvSalt },
+      change > 0n ? { receiverPubkey: changePubkey, amount: change, salt: chgSalt } : null,
+    ];
+
+    const { proof, nullifiers, newCommitments } = await generateSpendProof({
+      spendingPrivkey: ORG_PRIVKEY, token: MOCK_TOKEN, merkleRoot,
+      inputNotes: [
+        { amount: selected[0].amount, salt: selected[0].salt, index: selected[0].index, siblings: selected[0].siblings },
+        selected[1] ? { amount: selected[1].amount, salt: selected[1].salt, index: selected[1].index, siblings: selected[1].siblings } : null,
+      ],
+      outputNotes,
+      publicAmount: 0n, recipient: ethers.ZeroAddress,
+    });
+
+    // Save change note + receiver hint locally
+    if (change > 0n) {
+      const changeLeafIndex = sdk.noteManager.findLeafIndex(newCommitments[1]);
+      saveHintLocally(ORG_PRIVKEY, {
+        commitment: toCommitmentHex(newCommitments[1]),
+        token: MOCK_TOKEN, amount: change.toString(), salt: chgSalt.toString(),
+      });
+    }
+    // Save employee's received note locally so their balance check finds it
+    saveHintLocally(employee.spendingPrivkey, {
+      commitment: toCommitmentHex(newCommitments[0]),
+      token: MOCK_TOKEN, amount: amt.toString(), salt: recvSalt.toString(),
+    });
+
+    send({
+      step: "done",
+      employeeName: employee.name,
+      proof: ethers.hexlify(proof),
+      params: {
+        token: MOCK_TOKEN,
+        merkleRoot:     "0x" + merkleRoot.toString(16).padStart(64, "0"),
+        nullifiers:     nullifiers.map(n => "0x" + n.toString(16).padStart(64, "0")),
+        newCommitments: newCommitments.map(c => "0x" + c.toString(16).padStart(64, "0")),
+        publicAmount:   "0",
+        recipient:      ethers.ZeroAddress,
+      },
+    });
+  } catch (err) {
+    send({ step: "error", msg: err?.message ?? String(err) });
+  }
+  res.end();
+});
+
+// POST /v1/prove/withdraw — generate spend proof for employee withdrawal (password gated, wallet mode)
+app.post("/v1/prove/withdraw", async (req, res) => {
+  const send = sse(res);
+  const { employeeId, password, recipient, amount } = req.body;
+  if (password !== "123456") { send({ step: "error", msg: "Wrong password" }); return res.end(); }
+  const employee = EMPLOYEES.find(e => e.id === employeeId);
+  if (!employee) { send({ step: "error", msg: "Employee not found" }); return res.end(); }
+  if (!recipient) { send({ step: "error", msg: "recipient address required" }); return res.end(); }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const dummy    = ethers.Wallet.createRandom().connect(provider);
+
+    const sdk = new StealthPaySDK({
+      signer: dummy, privacyPoolAddress: POOL_ADDRESS,
+      spendingPrivkey: employee.spendingPrivkey, confirmTimeoutMs: 60_000,
+      zeroGStorage: ZG_STORAGE_CONFIG,
+    });
+
+    send({ step: "sync", msg: `Syncing ${employee.name}'s private balance…` });
+    await sdk.sync(provider, 0);
+    injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
+
+    const notes   = sdk.getNotes(MOCK_TOKEN);
+    const balance = notes.reduce((a, n) => a + n.amount, 0n);
+    send({ step: "sync", msg: `Private balance: ${ethers.formatUnits(balance, 6)} USDC` });
+    if (balance === 0n) throw new Error("No balance to withdraw");
+
+    const amt = amount ? BigInt(amount) : balance;
+    send({ step: "prove", msg: "Generating ZK proof for withdrawal… (30–60 s)" });
+
+    const unspent  = notes.sort((a, b) => (a.amount < b.amount ? -1 : 1));
+    const selected = [];
+    let total = 0n;
+    for (const n of unspent) {
+      if (total >= amt) break;
+      selected.push(n);
+      total += n.amount;
+      if (selected.length === 2) break;
+    }
+    if (total < amt) throw new Error(`Insufficient balance: have ${ethers.formatUnits(total, 6)}, need ${ethers.formatUnits(amt, 6)} USDC`);
+
+    const change       = total - amt;
+    const changePubkey = deriveSpendingPubkey(employee.spendingPrivkey);
+    const randSalt     = () => BigInt(ethers.hexlify(ethers.randomBytes(32))) % BN254;
+    const chgSalt      = randSalt();
+
+    const outputNotes = [
+      change > 0n ? { receiverPubkey: changePubkey, amount: change, salt: chgSalt } : null,
+      null,
+    ];
+
+    const { proof, nullifiers, newCommitments } = await generateSpendProof({
+      spendingPrivkey: employee.spendingPrivkey, token: MOCK_TOKEN,
+      merkleRoot: sdk.noteManager.getCurrentRoot(),
+      inputNotes: [
+        { amount: selected[0].amount, salt: selected[0].salt, index: selected[0].index, siblings: selected[0].siblings },
+        selected[1] ? { amount: selected[1].amount, salt: selected[1].salt, index: selected[1].index, siblings: selected[1].siblings } : null,
+      ],
+      outputNotes,
+      publicAmount: amt, recipient,
+    });
+
+    if (change > 0n) {
+      saveHintLocally(employee.spendingPrivkey, {
+        commitment: toCommitmentHex(newCommitments[0]),
+        token: MOCK_TOKEN, amount: change.toString(), salt: chgSalt.toString(),
+      });
+    }
+
+    send({
+      step: "done",
+      proof: ethers.hexlify(proof),
+      amount: amt.toString(),
+      params: {
+        token: MOCK_TOKEN,
+        merkleRoot:     "0x" + sdk.noteManager.getCurrentRoot().toString(16).padStart(64, "0"),
+        nullifiers:     nullifiers.map(n => "0x" + n.toString(16).padStart(64, "0")),
+        newCommitments: newCommitments.map(c => "0x" + c.toString(16).padStart(64, "0")),
+        publicAmount:   amt.toString(),
+        recipient,
+      },
+    });
+  } catch (err) {
+    send({ step: "error", msg: err?.message ?? String(err) });
+  }
+  res.end();
+});
+
 // GET /v1/employees — return employee list + recent payments
 app.get("/v1/employees", async (_req, res) => {
   try {
@@ -488,13 +703,13 @@ app.get("/v1/employees", async (_req, res) => {
 app.post("/v1/org/shield", async (req, res) => {
   const send = sse(res);
   const { amount } = req.body;
-  if (!process.env.DEPLOYER_PRIVATE_KEY) {
-    send({ step: "error", msg: "DEPLOYER_PRIVATE_KEY not set on server" });
+  if (!DEPLOYER_PRIVATE_KEY) {
+    send({ step: "error", msg: "No server signing key set (DEPLOYER_PRIVATE_KEY or RELAY_PRIVATE_KEY)" });
     return res.end();
   }
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const signer   = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+    const signer   = new ethers.Wallet(DEPLOYER_PRIVATE_KEY, provider);
     const amt      = BigInt(amount || "300000000");
 
     send({ step: "prove", msg: "Generating ZK proof for shield… (30–60 s)" });
@@ -558,8 +773,8 @@ app.post("/v1/org/balance", async (_req, res) => {
 app.post("/v1/pay", async (req, res) => {
   const send = sse(res);
   const { employeeId, amount } = req.body;
-  if (!process.env.DEPLOYER_PRIVATE_KEY) {
-    send({ step: "error", msg: "DEPLOYER_PRIVATE_KEY not set on server" });
+  if (!DEPLOYER_PRIVATE_KEY) {
+    send({ step: "error", msg: "No server signing key set (DEPLOYER_PRIVATE_KEY or RELAY_PRIVATE_KEY)" });
     return res.end();
   }
   const employee = EMPLOYEES.find(e => e.id === employeeId);
@@ -567,7 +782,7 @@ app.post("/v1/pay", async (req, res) => {
 
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const signer   = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+    const signer   = new ethers.Wallet(DEPLOYER_PRIVATE_KEY, provider);
     const amt      = BigInt(amount ?? employee.salary);
 
     const sdk = new StealthPaySDK({
@@ -633,8 +848,8 @@ app.post("/v1/withdraw", async (req, res) => {
   const send = sse(res);
   const { employeeId, password, recipient, amount } = req.body;
   if (password !== "123456") { send({ step: "error", msg: "Wrong password" }); return res.end(); }
-  if (!process.env.DEPLOYER_PRIVATE_KEY) {
-    send({ step: "error", msg: "DEPLOYER_PRIVATE_KEY not set on server" });
+  if (!DEPLOYER_PRIVATE_KEY) {
+    send({ step: "error", msg: "No server signing key set (DEPLOYER_PRIVATE_KEY or RELAY_PRIVATE_KEY)" });
     return res.end();
   }
   const employee = EMPLOYEES.find(e => e.id === employeeId);
@@ -642,7 +857,7 @@ app.post("/v1/withdraw", async (req, res) => {
 
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const signer   = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+    const signer   = new ethers.Wallet(DEPLOYER_PRIVATE_KEY, provider);
 
     const sdk = new StealthPaySDK({
       signer, privacyPoolAddress: POOL_ADDRESS,
