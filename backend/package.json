@@ -9,8 +9,8 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.21.0",
     "ethers": "^6.0.0",
-    "stealthpay-sdk": "^1.0.1"
+    "express": "^4.21.0",
+    "stealthpay-sdk": "^1.0.3"
   }
 }
