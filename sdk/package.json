@@ -1,6 +1,6 @@
 {
   "name": "stealthpay-sdk",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "StealthPay SDK — private token transfers on 0G Chain",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

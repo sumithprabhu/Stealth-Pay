@@ -106,7 +106,30 @@ export class StealthPaySDK {
 
     this.noteManager.trackNote(commitment, token, amount, salt, Number(leafIndex));
 
-    return { txHash: receipt.hash, commitment, amount, token };
+    // Post encrypted hint to 0G Storage so this note survives across sessions.
+    // Same pattern as privateSend() uses for the receiver — but addressed to ourselves.
+    if (this.config.zeroGStorage) {
+      try {
+        const { pubkey: myEncPubkey } = deriveEncryptionKeypair(this.config.spendingPrivkey);
+        await postHint({
+          signer:            this.config.signer,
+          poolContract:      this.chain.pool,
+          receiverEncPubkey: myEncPubkey,
+          payload: {
+            commitment: "0x" + commitment.toString(16).padStart(64, "0"),
+            token,
+            amount:     amount.toString(),
+            salt:       salt.toString(),
+          },
+          indexerRpc: this.config.zeroGStorage.indexerRpc,
+          rpc:        this.config.zeroGStorage.rpc,
+        });
+      } catch {
+        // Hint posting is best-effort — don't fail the shield if storage is unavailable.
+      }
+    }
+
+    return { txHash: receipt.hash, commitment, amount, token, salt };
   }
 
   // ─────────────────────────────────────────────────────────────────────────

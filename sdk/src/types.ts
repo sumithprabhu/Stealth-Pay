@@ -49,6 +49,7 @@ export interface ShieldResult {
   commitment: bigint;
   amount: bigint;
   token: string;
+  salt: bigint;
 }
 
 export interface UnshieldResult {
