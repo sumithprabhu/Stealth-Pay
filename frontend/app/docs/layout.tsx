@@ -51,6 +51,12 @@ const sections = [
     ],
   },
   {
+    group: "Builder Guide",
+    items: [
+      { slug: "before-you-ship", label: "Before You Ship" },
+    ],
+  },
+  {
     group: "Security",
     items: [
       { slug: "ai-security-report", label: "AI Security Report" },
@@ -60,12 +66,6 @@ const sections = [
     group: "Compliance",
     items: [
       { slug: "compliance", label: "Compliance & Regulation" },
-    ],
-  },
-  {
-    group: "Builder Guide",
-    items: [
-      { slug: "before-you-ship", label: "Before You Ship" },
     ],
   },
 ];
