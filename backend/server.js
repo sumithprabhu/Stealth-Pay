@@ -39,6 +39,18 @@ const PaymentSchema = new mongoose.Schema({
 });
 const Payment = mongoose.model("Payment", PaymentSchema);
 
+// Note hints — persisted to MongoDB so they survive backend restarts.
+// pubkeyHash is keccak256 of the spending encryption pubkey (same derivation as HintStore.ts).
+const NoteHintSchema = new mongoose.Schema({
+  pubkeyHash: { type: String, index: true },
+  commitment: String,
+  token:      String,
+  amount:     String,
+  salt:       String,
+  createdAt:  { type: Date, default: Date.now },
+});
+const NoteHint = mongoose.model("NoteHint", NoteHintSchema);
+
 // ── V1 Payroll — hardcoded org + employees ────────────────────────────────────
 const ORG_PRIVKEY = BigInt(ethers.keccak256(ethers.toUtf8Bytes("stealthcorp-v1-2024"))) % BN254;
 const ORG_PUBKEY  = deriveSpendingPubkey(ORG_PRIVKEY);
@@ -52,8 +64,9 @@ const EMPLOYEES = [
   return { ...e, spendingPrivkey: privkey, spendingPubkey: deriveSpendingPubkey(privkey).toString() };
 });
 
-function injectLocalHints(sdk, privkey, token) {
-  for (const h of getLocalHints(privkey)) {
+async function injectLocalHints(sdk, privkey, token) {
+  const hints = await getLocalHints(privkey);
+  for (const h of hints) {
     const commitment = BigInt(h.commitment);
     if (sdk.noteManager.getNote(commitment)) continue;
     const leafIndex = sdk.noteManager.findLeafIndex(commitment);
@@ -85,25 +98,50 @@ const POOL_ABI = [
 const RELAY_PRIVATE_KEY   = process.env.RELAY_PRIVATE_KEY;
 const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY ?? process.env.RELAY_PRIVATE_KEY;
 
-// ── Local hint store (primary fallback when 0G Storage is unavailable) ────────
-// Key: hex spending pubkey hash → Value: HintPayload[]
-// In-memory; survives for the lifetime of this process (sufficient for demo sessions).
-const localHintStore = new Map();
+// ── Hint store — MongoDB primary, in-memory cache for speed ──────────────────
+// Survives backend restarts (MongoDB). Falls back gracefully if MongoDB is down.
 
-function localStoreKey(spendingPrivkey) {
+const memCache = new Map(); // commitment → true (dedup guard within a session)
+
+function hintPubkeyHash(spendingPrivkey) {
   const { pubkey } = deriveEncryptionKeypair(spendingPrivkey);
   return ethers.keccak256(pubkey);
 }
 
-function saveHintLocally(spendingPrivkey, payload) {
-  const key = localStoreKey(spendingPrivkey);
-  const existing = localHintStore.get(key) ?? [];
-  existing.push(payload);
-  localHintStore.set(key, existing);
+async function saveHintToDB(spendingPrivkey, payload) {
+  const pubkeyHash = hintPubkeyHash(spendingPrivkey);
+  // Skip duplicates within this session (avoids double-writes on retry)
+  const dedupKey = pubkeyHash + payload.commitment;
+  if (memCache.has(dedupKey)) return;
+  memCache.set(dedupKey, true);
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const exists = await NoteHint.exists({ pubkeyHash, commitment: payload.commitment });
+      if (!exists) {
+        await NoteHint.create({ pubkeyHash, ...payload });
+      }
+    } catch (e) {
+      console.error("saveHintToDB error:", e.message);
+    }
+  }
 }
 
-function getLocalHints(spendingPrivkey) {
-  return localHintStore.get(localStoreKey(spendingPrivkey)) ?? [];
+async function getHintsFromDB(spendingPrivkey) {
+  const pubkeyHash = hintPubkeyHash(spendingPrivkey);
+  if (mongoose.connection.readyState !== 1) return [];
+  try {
+    return await NoteHint.find({ pubkeyHash }).lean();
+  } catch { return []; }
+}
+
+// Keep old sync-compatible names so existing call sites work without changes
+function saveHintLocally(spendingPrivkey, payload) {
+  saveHintToDB(spendingPrivkey, payload); // fire-and-forget, errors logged inside
+}
+
+async function getLocalHints(spendingPrivkey) {
+  return getHintsFromDB(spendingPrivkey);
 }
 
 // ── Retry helper ──────────────────────────────────────────────────────────────
@@ -240,15 +278,7 @@ app.post("/prove", async (req, res) => {
       send({ step: "sync", msg: "Syncing Merkle tree to find your notes…" });
       await sdk.sync(provider, 0);
 
-      // Inject any locally-stored hints (covers the case where 0G Storage was unavailable during shield).
-      for (const h of getLocalHints(privkey)) {
-        const commitment = BigInt(h.commitment);
-        if (sdk.noteManager.getNote(commitment)) continue;
-        const leafIndex = sdk.noteManager.findLeafIndex(commitment);
-        if (leafIndex !== undefined) {
-          sdk.noteManager.trackNote(commitment, h.token, BigInt(h.amount), BigInt(h.salt), leafIndex);
-        }
-      }
+      await injectLocalHints(sdk, privkey, token);
 
       const notes = sdk.getNotes(token);
       send({
@@ -415,14 +445,7 @@ app.post("/execute", async (req, res) => {
       send({ step: "sync", msg: "Syncing Merkle tree…" });
       await sdk.sync(provider, 0);
 
-      for (const h of getLocalHints(privkey)) {
-        const commitment = BigInt(h.commitment);
-        if (sdk.noteManager.getNote(commitment)) continue;
-        const leafIndex = sdk.noteManager.findLeafIndex(commitment);
-        if (leafIndex !== undefined) {
-          sdk.noteManager.trackNote(commitment, h.token, BigInt(h.amount), BigInt(h.salt), leafIndex);
-        }
-      }
+      await injectLocalHints(sdk, privkey, token);
 
       const notes = sdk.getNotes(token);
       send({ step: "sync", msg: `Tree synced — ${notes.length} unspent note(s)` });
@@ -516,7 +539,7 @@ app.post("/v1/prove/pay", async (req, res) => {
 
     send({ step: "sync", msg: "Syncing org pool balance…" });
     await sdk.sync(provider, 0);
-    injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
+    await injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
 
     const notes   = sdk.getNotes(MOCK_TOKEN);
     const balance = notes.reduce((a, n) => a + n.amount, 0n);
@@ -612,7 +635,7 @@ app.post("/v1/prove/withdraw", async (req, res) => {
 
     send({ step: "sync", msg: `Syncing ${employee.name}'s private balance…` });
     await sdk.sync(provider, 0);
-    injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
+    await injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
 
     const notes   = sdk.getNotes(MOCK_TOKEN);
     const balance = notes.reduce((a, n) => a + n.amount, 0n);
@@ -760,7 +783,7 @@ app.post("/v1/org/balance", async (_req, res) => {
       zeroGStorage: ZG_STORAGE_CONFIG,
     });
     await sdk.sync(provider, 0);
-    injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
+    await injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
     const notes   = sdk.getNotes(MOCK_TOKEN);
     const balance = notes.reduce((a, n) => a + n.amount, 0n);
     res.json({ balance: ethers.formatUnits(balance, 6), noteCount: notes.length });
@@ -793,7 +816,7 @@ app.post("/v1/pay", async (req, res) => {
 
     send({ step: "sync", msg: "Syncing org pool balance…" });
     await sdk.sync(provider, 0);
-    injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
+    await injectLocalHints(sdk, ORG_PRIVKEY, MOCK_TOKEN);
 
     const notes   = sdk.getNotes(MOCK_TOKEN);
     const balance = notes.reduce((a, n) => a + n.amount, 0n);
@@ -834,7 +857,7 @@ app.post("/v1/balance", async (req, res) => {
       zeroGStorage: ZG_STORAGE_CONFIG,
     });
     await sdk.sync(provider, 0);
-    injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
+    await injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
     const notes   = sdk.getNotes(MOCK_TOKEN);
     const balance = notes.reduce((a, n) => a + n.amount, 0n);
     res.json({ balance: ethers.formatUnits(balance, 6), noteCount: notes.length });
@@ -867,7 +890,7 @@ app.post("/v1/withdraw", async (req, res) => {
 
     send({ step: "sync", msg: `Syncing ${employee.name}'s private balance…` });
     await sdk.sync(provider, 0);
-    injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
+    await injectLocalHints(sdk, employee.spendingPrivkey, MOCK_TOKEN);
 
     const notes   = sdk.getNotes(MOCK_TOKEN);
     const balance = notes.reduce((a, n) => a + n.amount, 0n);
