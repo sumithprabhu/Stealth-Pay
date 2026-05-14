@@ -1851,11 +1851,14 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
             },
           ].map((item) => (
             <div key={item.label} className="border border-white/[0.08] p-5">
-              <p className="text-sm font-mono text-white/80 mb-3">☐ {item.label}</p>
+              <p className="text-sm font-mono text-white/80 mb-3 flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 shrink-0" style={{ background: "#eca8d6" }} />
+                {item.label}
+              </p>
               <ul className="space-y-1.5">
                 {item.options.map((o) => (
                   <li key={o} className="text-sm text-white/45 flex gap-2">
-                    <span className="text-white/20 shrink-0">→</span>
+                    <span className="inline-block w-1.5 h-1.5 shrink-0 mt-1.5" style={{ background: "#eca8d6", opacity: 0.5 }} />
                     <span>{o}</span>
                   </li>
                 ))}
