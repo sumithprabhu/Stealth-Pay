@@ -25,6 +25,9 @@ circuits/target/*.gz
 # Internal — not for public repo
 BUILD_IN_PUBLIC.md
 TWEETS.md
+script.md
+submission.md
+submission-banner.svg
 
 # Remotion video project
 video/
