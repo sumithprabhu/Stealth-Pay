@@ -1800,6 +1800,275 @@ function hash4(a: bigint, b: bigint, c: bigint, d: bigint): bigint {
       </>
     ),
   },
+
+  // ── Before You Ship ───────────────────────────────────────────────────────
+  "before-you-ship": {
+    eyebrow: "Builder Guide",
+    title: "Before You Ship",
+    prev: { href: "/docs/compliance", label: "Compliance & Regulation" },
+    content: (
+      <>
+        <P>
+          The SDK handles all ZK cryptography — proof generation, Merkle tree management, nullifier
+          derivation, and note encryption. Everything else is your responsibility. This page is a
+          checklist of every decision you need to make before putting StealthPay in front of real users.
+        </P>
+
+        <Callout type="warning">
+          Skipping any item on this list is a product risk. Privacy protocols are only as strong as
+          their weakest layer — and that layer is almost always key management or tx signing, not the
+          ZK proofs.
+        </Callout>
+
+        {/* ── 1. Spending Key ─────────────────────────────────────────────── */}
+        <H2>1 · Spending key custody</H2>
+        <P>
+          The spending private key is the master secret of every user's private balance. It is not
+          their wallet key. It is a separate bigint that the SDK uses to generate ZK proofs and
+          derive nullifiers. <strong className="text-white/80">Whoever holds this key controls the funds.</strong>
+        </P>
+
+        <Callout type="warning">
+          The SDK has zero opinion on where or how you store the spending key. It accepts a bigint
+          and uses it. Storage, encryption, and access control are entirely your layer.
+        </Callout>
+
+        <H3>What you must decide</H3>
+
+        <div className="space-y-3 my-6">
+          {[
+            {
+              label: "Who generates the key?",
+              options: ["User generates it on their device (self-custody)", "Your backend generates it and gives it to the user", "Derived deterministically from something the user already has (e.g. MetaMask signature)"],
+            },
+            {
+              label: "Where is it stored?",
+              options: ["Browser localStorage / IndexedDB — encrypted with user's password or MetaMask sig", "Your server — encrypted at rest, access gated by auth", "User's own storage — exported like a seed phrase, never on your server"],
+            },
+            {
+              label: "How is access gated?",
+              options: ["Password + bcrypt (minimum)", "Password + TOTP 2FA", "MetaMask signature challenge — user signs a message, your app uses the sig to decrypt", "Hardware wallet derivation — spending key derived from a signed message on ledger/trezor"],
+            },
+          ].map((item) => (
+            <div key={item.label} className="border border-white/[0.08] p-5">
+              <p className="text-sm font-mono text-white/80 mb-3">☐ {item.label}</p>
+              <ul className="space-y-1.5">
+                {item.options.map((o) => (
+                  <li key={o} className="text-sm text-white/45 flex gap-2">
+                    <span className="text-white/20 shrink-0">→</span>
+                    <span>{o}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        <H3>Recommended approach for browser apps</H3>
+        <P>
+          Ask the user to sign a deterministic message with MetaMask. Use that signature as the
+          encryption key to encrypt the spending private key in localStorage. The spending key never
+          leaves the browser, and it is tied to wallet ownership — no additional password required.
+        </P>
+        <Code>{`// Derive spending key from MetaMask signature
+const sig = await signer.signMessage("StealthPay spending key v1");
+const spendingPrivkey = BigInt(ethers.keccak256(sig)) % BN254_PRIME;
+
+// Store encrypted in localStorage
+const encrypted = encrypt(spendingPrivkey, sig); // your encryption layer
+localStorage.setItem("stealthpay_key", encrypted);`}</Code>
+
+        <H3>If the spending key is leaked</H3>
+        <Callout type="warning">
+          There is no on-chain revocation. A leaked spending key means an attacker can drain all
+          notes owned by that key. Speed is the only defence.
+        </Callout>
+        <div className="space-y-2 my-4">
+          {[
+            "Detect the leak immediately — monitor for unexpected unshield txs from your pool",
+            "Unshield all notes to a fresh address as fast as possible",
+            "Generate a new spending key and re-shield into fresh commitments",
+            "Invalidate any server-side sessions that had access to the old key",
+            "Inform the user — they need to know their privacy history may be exposed",
+          ].map((step, i) => (
+            <div key={i} className="flex gap-3 text-sm">
+              <span className="font-mono text-red-400/70 shrink-0">{String(i + 1).padStart(2, "0")}</span>
+              <span className="text-white/55">{step}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* ── 2. Transaction Signing ───────────────────────────────────────── */}
+        <H2>2 · Transaction signing strategy</H2>
+        <P>
+          The ZK proof proves note ownership. But a separate wallet still needs to submit the
+          transaction and pay gas. These are two independent decisions. The contract does not care
+          who submits — it only verifies the proof.
+        </P>
+
+        <div className="overflow-x-auto my-6">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-white/[0.08]">
+                {["Strategy", "Who submits tx", "Privacy", "Complexity", "Best for"].map((h) => (
+                  <th key={h} className="text-left px-4 py-3 text-white/35 font-mono text-xs uppercase tracking-widest">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ["User signs", "User's wallet", "Partial — wallet address visible on-chain", "Low", "P2P apps, self-custody tools"],
+                ["Backend signs", "Your server wallet", "Better — user wallet never touches pool", "Medium", "Payroll, enterprise, SaaS"],
+                ["Relayer network", "Decentralised relayer", "Full — no link to any user wallet", "High", "Consumer privacy apps, max privacy"],
+              ].map(([s, w, p, c, b]) => (
+                <tr key={s} className="border-b border-white/[0.05] last:border-0 align-top">
+                  <td className="px-4 py-3 font-mono text-[#eca8d6]/80 text-xs">{s}</td>
+                  <td className="px-4 py-3 text-white/50">{w}</td>
+                  <td className="px-4 py-3 text-white/50">{p}</td>
+                  <td className="px-4 py-3 text-white/50">{c}</td>
+                  <td className="px-4 py-3 text-white/50">{b}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="space-y-3 my-6">
+          {[
+            { label: "Decide who submits shield txs", note: "Usually the user — they're depositing their own funds" },
+            { label: "Decide who submits privateSend txs", note: "Can be user, backend, or relayer — no restriction" },
+            { label: "Decide who submits unshield txs", note: "Relayer gives best privacy — user's address never linked to pool" },
+            { label: "Handle gas for non-user signers", note: "Backend or relayer wallet needs native tokens (OG) for gas" },
+            { label: "If using a relayer — define your fee model", note: "Relayer needs economic incentive; fee can be taken from unshield amount" },
+          ].map((item) => (
+            <div key={item.label} className="flex gap-3 border border-white/[0.06] p-4">
+              <span className="text-[#eca8d6]/60 font-mono text-sm shrink-0">☐</span>
+              <div>
+                <p className="text-sm text-white/80">{item.label}</p>
+                <p className="text-xs text-white/40 mt-0.5">{item.note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── 3. Note Discovery ───────────────────────────────────────────── */}
+        <H2>3 · Note discovery</H2>
+        <P>
+          When someone receives a private transfer, their note (commitment, token, amount, salt)
+          needs to reach them somehow so they can spend it later. The SDK supports{" "}
+          <strong className="text-white/80">0G Storage hints</strong> for this — encrypted blobs
+          posted on-chain that only the receiver can decrypt. But this requires 0G Storage to be
+          available and the receiver to have their spending key ready to scan.
+        </P>
+
+        <div className="space-y-3 my-6">
+          {[
+            { label: "Enable 0G Storage hints (recommended)", note: "Pass zeroGStorage config to SDK. Works automatically for privateSend.", code: true },
+            { label: "Define a fallback if 0G Storage is unavailable", note: "Store note payloads in your own database, encrypted with the receiver's spending pubkey" },
+            { label: "Handle note discovery for shield txs", note: "Shield notes are only known to the shielder — make sure your app persists them across sessions" },
+            { label: "Decide how receivers find notes from direct deposits", note: "If you shield on behalf of a user, you need to communicate their note payload to them securely" },
+          ].map((item) => (
+            <div key={item.label} className="flex gap-3 border border-white/[0.06] p-4">
+              <span className="text-[#eca8d6]/60 font-mono text-sm shrink-0">☐</span>
+              <div>
+                <p className="text-sm text-white/80">{item.label}</p>
+                <p className="text-xs text-white/40 mt-0.5">{item.note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Code>{`// Enable 0G Storage hints — SDK handles encryption + posting automatically
+const sdk = new StealthPaySDK({
+  signer,
+  privacyPoolAddress: POOL_ADDRESS,
+  spendingPrivkey,
+  zeroGStorage: {
+    indexerRpc: "https://indexer-storage-testnet-standard.0g.ai",
+    rpc:        "https://evmrpc-testnet.0g.ai",
+  },
+});`}</Code>
+
+        {/* ── 4. UX ───────────────────────────────────────────────────────── */}
+        <H2>4 · UX decisions</H2>
+        <div className="space-y-3 my-6">
+          {[
+            { label: "Never show the spending key raw in the UI", note: "Treat it like a seed phrase — export-only, behind a confirmation, never in plain text in a form" },
+            { label: "Show users their private balance, not their notes", note: "Users think in balances, not UTXOs. Abstract note selection away." },
+            { label: "Handle the proof generation wait time", note: "ZK proofs take 30–60 s. Show a meaningful loading state — don't let users think the app froze." },
+            { label: "Handle Merkle root staleness", note: "If another tx lands between sync and spend, your Merkle root is stale and the proof will revert. Sync immediately before generating a spend proof." },
+            { label: "Warn users before unshielding", note: "Unshield makes the token publicly visible at the recipient address. Some users may not expect this." },
+          ].map((item) => (
+            <div key={item.label} className="flex gap-3 border border-white/[0.06] p-4">
+              <span className="text-[#eca8d6]/60 font-mono text-sm shrink-0">☐</span>
+              <div>
+                <p className="text-sm text-white/80">{item.label}</p>
+                <p className="text-xs text-white/40 mt-0.5">{item.note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Summary checklist ───────────────────────────────────────────── */}
+        <H2>Full checklist</H2>
+        <div className="border border-white/[0.08] divide-y divide-white/[0.05] my-6">
+          {[
+            ["Spending key", [
+              "Decided who generates the spending key",
+              "Chose a storage location (browser / server / user-held)",
+              "Implemented access gating (password, 2FA, or MetaMask sig)",
+              "Built a key export/backup flow for users",
+              "Defined an incident plan if a key is leaked",
+            ]],
+            ["Transaction signing", [
+              "Decided who signs shield txs",
+              "Decided who signs privateSend txs",
+              "Decided who signs unshield txs",
+              "Funded any backend/relayer wallet with native gas tokens",
+              "Defined relayer fee model if applicable",
+            ]],
+            ["Note discovery", [
+              "Enabled 0G Storage hints (zeroGStorage SDK config)",
+              "Built a fallback store for when 0G Storage is unavailable",
+              "Ensured shield notes persist across user sessions",
+            ]],
+            ["UX", [
+              "Spending key never shown raw in the UI",
+              "Balance shown instead of raw notes",
+              "Loading state shown during 30–60 s proof generation",
+              "Merkle sync happens immediately before each spend",
+              "Users warned before any unshield tx",
+            ]],
+          ].map(([section, items]) => (
+            <div key={section as string} className="p-5">
+              <p className="text-xs font-mono text-white/35 uppercase tracking-widest mb-3">{section as string}</p>
+              <div className="space-y-2">
+                {(items as string[]).map((item) => (
+                  <div key={item} className="flex gap-2 text-sm text-white/55">
+                    <span className="text-white/20 shrink-0 font-mono">☐</span>
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Callout type="tip">
+          If you have questions about any of these decisions,{" "}
+          <a href="https://github.com/sumithprabhu/Stealth-Pay/issues" target="_blank" rel="noopener noreferrer"
+            className="text-[#eca8d6]/80 hover:text-[#eca8d6] transition-colors">
+            open an issue on GitHub
+          </a>{" "}
+          or check the{" "}
+          <a href="/playground" className="text-[#eca8d6]/80 hover:text-[#eca8d6] transition-colors">
+            playground
+          </a>{" "}
+          for working examples of each pattern.
+        </Callout>
+      </>
+    ),
+  },
 };
 
 // ── Route handler ─────────────────────────────────────────────────────────────

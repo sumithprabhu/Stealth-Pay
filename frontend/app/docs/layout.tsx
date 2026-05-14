@@ -62,6 +62,12 @@ const sections = [
       { slug: "compliance", label: "Compliance & Regulation" },
     ],
   },
+  {
+    group: "Builder Guide",
+    items: [
+      { slug: "before-you-ship", label: "Before You Ship" },
+    ],
+  },
 ];
 
 function Sidebar() {
