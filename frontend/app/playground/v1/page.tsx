@@ -98,22 +98,53 @@ export default function PayrollDemo() {
   const { data: walletClient } = useWalletClient();
   const { address } = useAccount();
 
-  const [role,       setRole]       = useState<Role>("org");
-  const [employees,  setEmployees]  = useState<Employee[]>([]);
-  const [payments,   setPayments]   = useState<Payment[]>([]);
-  const [orgBalance, setOrgBalance] = useState<string | null>(null);
-  const [selected,   setSelected]   = useState<Employee | null>(null);
-  const [password,   setPassword]   = useState("");
-  const [empBalance, setEmpBalance] = useState<string | null>(null);
-  const [recipient,  setRecipient]  = useState("");
-  const [shieldAmt,  setShieldAmt]  = useState("300000000");
-  const [running,    setRunning]    = useState(false);
-  const [logs,       setLogs]       = useState<LogLine[]>([]);
+  const [role,          setRole]          = useState<Role>("org");
+  const [employees,     setEmployees]     = useState<Employee[]>([]);
+  const [payments,      setPayments]      = useState<Payment[]>([]);
+  const [orgBalance,    setOrgBalance]    = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState<string | null>(null);
+  const [minting,       setMinting]       = useState(false);
+  const [mintTx,        setMintTx]        = useState<string | null>(null);
+  const [selected,      setSelected]      = useState<Employee | null>(null);
+  const [password,      setPassword]      = useState("");
+  const [empBalance,    setEmpBalance]    = useState<string | null>(null);
+  const [recipient,     setRecipient]     = useState("");
+  const [shieldAmt,     setShieldAmt]     = useState("300000000");
+  const [running,       setRunning]       = useState(false);
+  const [logs,          setLogs]          = useState<LogLine[]>([]);
 
   const addLog    = (l: LogLine) => setLogs(p => [...p, l]);
   const clearLogs = () => setLogs([]);
 
   const publicClient = createPublicClient({ chain: zeroGGalileo, transport: http(RPC_URL) });
+
+  async function fetchWalletBalance(addr: string) {
+    try {
+      const ERC20_READ = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+      const bal = await publicClient.readContract({
+        address: MOCK_TOKEN as `0x${string}`, abi: ERC20_READ,
+        functionName: "balanceOf", args: [addr as `0x${string}`],
+      });
+      setWalletBalance((Number(bal as bigint) / 1e6).toFixed(2));
+    } catch { setWalletBalance(null); }
+  }
+
+  async function doMint() {
+    if (!address || minting) return;
+    setMinting(true); setMintTx(null);
+    try {
+      const res  = await fetch("/api/faucet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMintTx(data.txHash);
+      await fetchWalletBalance(address);
+    } catch { /* silent — user sees nothing minted */ }
+    setMinting(false);
+  }
 
   async function fetchData() {
     const data = await fetch(`${BACKEND}/v1/employees`).then(r => r.json());
@@ -127,6 +158,7 @@ export default function PayrollDemo() {
   }
 
   useEffect(() => { fetchData(); }, []);
+  useEffect(() => { if (address) fetchWalletBalance(address); else setWalletBalance(null); }, [address]);
 
   // ── Shield ────────────────────────────────────────────────────────────────
   async function doShield() {
@@ -355,7 +387,38 @@ export default function PayrollDemo() {
 
               {/* Shield */}
               <div className="px-5 py-4 border-b border-white/10 bg-white/[0.02] space-y-3">
-                <p className="text-xs font-mono text-white/40 uppercase tracking-widest">Step 1 — Fund pool</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-mono text-white/40 uppercase tracking-widest">Step 1 — Fund pool</p>
+                  {walletBalance !== null && (
+                    <p className="text-xs font-mono text-white/40">
+                      Wallet: <span className="text-white/65">{walletBalance} USDC</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Mint button — show when wallet balance < 300 USDC */}
+                {address && walletBalance !== null && Number(walletBalance) < 300 && (
+                  <div className="border border-amber-400/25 bg-amber-400/[0.04] p-3 space-y-2">
+                    <p className="text-xs font-mono text-amber-400/80">
+                      Your wallet has less than 300 USDC — mint some first
+                    </p>
+                    {mintTx ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-mono text-emerald-400">✓ 1 000 USDC minted</p>
+                        <a href={`${EXPLORER}/tx/${mintTx}`} target="_blank" rel="noopener noreferrer"
+                          className="text-xs font-mono text-white/40 hover:text-white/65 break-all block">
+                          {mintTx} ↗
+                        </a>
+                      </div>
+                    ) : (
+                      <button onClick={doMint} disabled={minting}
+                        className="text-xs font-mono px-4 py-2 border border-amber-400/40 text-amber-400 hover:bg-amber-400/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                        {minting ? "Minting…" : `✦ Mint 1 000 USDC to ${address.slice(0, 8)}…`}
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <input value={shieldAmt} onChange={e => setShieldAmt(e.target.value)}
