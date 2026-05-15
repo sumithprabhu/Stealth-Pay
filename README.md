@@ -38,3 +38,12 @@ The SDK generates a spend proof with a public output amount and a recipient addr
 | [`sdk/`](sdk/) | TypeScript SDK — client-side proof generation, note management, 0G Storage sync | [README](sdk/README.md) |
 | [`frontend/`](frontend/) | Next.js app — explorer, playground, docs | [README](frontend/README.md) |
 | [`engine/`](engine/) | V1 TEE reference (not used in production) | [README](engine/README.md) |
+
+---
+
+## Videos
+
+| | Link |
+|---|---|
+| Demo video | [https://youtu.be/h4YUHuB7PKA](https://youtu.be/h4YUHuB7PKA) |
+| Pitch video | [https://youtu.be/3xzU__c_SA0](https://youtu.be/3xzU__c_SA0) |

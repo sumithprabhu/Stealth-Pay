@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useWalletClient } from "wagmi";
 import { createWalletClient, custom, createPublicClient, http, parseAbi } from "viem";
@@ -450,6 +451,13 @@ export default function PlaygroundPage() {
   const [params, setParams]         = useState<Params>({
     token: MOCK_TOKEN, amount: "", pk: "", spendingPrivkey: "", receiverPubkey: "", recipient: "",
   });
+  const [showNewVersionPopup, setShowNewVersionPopup] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowNewVersionPopup(true), 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const { address: connectedAddress } = useAccount();
   const activeAddress = signerMode === "wallet" ? connectedAddress : undefined;
@@ -460,6 +468,33 @@ export default function PlaygroundPage() {
 
   return (
     <div className="min-h-screen text-white overflow-x-hidden" style={{ background: "oklch(0.06 0.008 260)" }}>
+
+      {/* New version popup */}
+      {showNewVersionPopup && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="border border-[#eca8d6]/50 bg-[oklch(0.08_0.008_260)] p-8 max-w-sm w-full mx-4 space-y-5 shadow-2xl">
+            <div className="space-y-2">
+              <p className="text-xs font-mono text-[#eca8d6]/70 uppercase tracking-widest">Update available</p>
+              <h2 className="text-xl font-display text-white">A new version of Playground is here.</h2>
+              <p className="text-sm text-white/55">Check out the latest playground experience with improved features and a refreshed interface.</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => router.push("/playground/v1")}
+                className="flex-1 py-2.5 text-sm font-mono border border-[#eca8d6]/60 bg-[#eca8d6]/[0.10] text-[#eca8d6] hover:bg-[#eca8d6]/[0.20] hover:border-[#eca8d6]/80 transition-all"
+              >
+                Go there →
+              </button>
+              <button
+                onClick={() => setShowNewVersionPopup(false)}
+                className="flex-1 py-2.5 text-sm font-mono border border-white/25 text-white/60 hover:border-white/45 hover:text-white/85 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Nav */}
       <header className="sticky top-0 z-50 border-b border-white/20 backdrop-blur-md"
